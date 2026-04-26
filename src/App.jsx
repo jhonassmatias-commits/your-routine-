@@ -1,5 +1,76 @@
 import './storage.js';
 import { useState, useEffect, useRef, useCallback } from "react";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, doc, setDoc, getDoc, collection, query, where, getDocs, onSnapshot, updateDoc, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+// ── FIREBASE ──
+const firebaseConfig = {
+  apiKey: "AIzaSyAlfcY2UZTCeGh3_nmzROmhXYqmhTpjbWo",
+  authDomain: "your-routine-a7118.firebaseapp.com",
+  projectId: "your-routine-a7118",
+  storageBucket: "your-routine-a7118.firebasestorage.app",
+  messagingSenderId: "708442867968",
+  appId: "1:708442867968:web:dd50f73f862417615e0be5"
+};
+const fbApp = initializeApp(firebaseConfig);
+const db = getFirestore(fbApp);
+
+// Firebase helpers
+const fbSaveProfile = async (uid, data) => {
+  try {
+    await setDoc(doc(db, "users", uid), {
+      uid, username: data.username, totalXP: data.totalXP,
+      level: data.level||1, streak: data.streak?.current||0,
+      unlockedAch: data.unlockedAch||[], avatar: data.avatar||{},
+      modules: data.modules||[], updatedAt: Date.now(),
+      friends: data.friends||[], friendRequests: data.friendRequests||[],
+    }, {merge:true});
+  } catch(e){ console.warn("FB save error",e); }
+};
+const fbGetProfile = async (uid) => {
+  try { const d=await getDoc(doc(db,"users",uid)); return d.exists()?d.data():null; }
+  catch(e){ return null; }
+};
+const fbSearchUser = async (username) => {
+  try {
+    const q=query(collection(db,"users"),where("username","==",username));
+    const snap=await getDocs(q);
+    if(snap.empty) return null;
+    return snap.docs[0].data();
+  } catch(e){ return null; }
+};
+const fbSendFriendRequest = async (fromUid, toUid) => {
+  try { await updateDoc(doc(db,"users",toUid),{friendRequests:arrayUnion(fromUid)}); return true; }
+  catch(e){ return false; }
+};
+const fbAcceptFriend = async (myUid, friendUid) => {
+  try {
+    await updateDoc(doc(db,"users",myUid),{friends:arrayUnion(friendUid),friendRequests:arrayRemove(friendUid)});
+    await updateDoc(doc(db,"users",friendUid),{friends:arrayUnion(myUid)});
+    return true;
+  } catch(e){ return false; }
+};
+const fbDeclineFriend = async (myUid, friendUid) => {
+  try { await updateDoc(doc(db,"users",myUid),{friendRequests:arrayRemove(friendUid)}); return true; }
+  catch(e){ return false; }
+};
+const fbRemoveFriend = async (myUid, friendUid) => {
+  try {
+    await updateDoc(doc(db,"users",myUid),{friends:arrayRemove(friendUid)});
+    await updateDoc(doc(db,"users",friendUid),{friends:arrayRemove(myUid)});
+    return true;
+  } catch(e){ return false; }
+};
+
+// ── MODULES ──
+const ALL_MODULES = [
+  {id:"estudo",    icon:"📚", label:"Estudos / Concurso", desc:"Matérias, questões, simulados",  color:"#60a5fa"},
+  {id:"treino",    icon:"💪", label:"Treino",             desc:"Fichas de exercícios e musculação",color:"#ef4444"},
+  {id:"corrida",   icon:"🏃", label:"Corrida",            desc:"Registro de corridas e distância", color:"#34d399"},
+  {id:"financeiro",icon:"💰", label:"Financeiro",         desc:"Controle de gastos e salário",    color:"#22c55e"},
+  {id:"livros",    icon:"📖", label:"Leitura",            desc:"Livros em andamento e biblioteca", color:"#f0c040"},
+  {id:"habitos",   icon:"🌱", label:"Hábitos",            desc:"Hábitos diários personalizados",  color:"#a78bfa"},
+];
 
 // ═══════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -160,9 +231,11 @@ const MOODS = [
 ];
 
 const AVATAR_SKINS=["#FDBCB4","#F1C27D","#E0AC69","#C68642","#8D5524"];
-const AVATAR_HAIRS=["#1a0a00","#4a2c00","#8B4513","#DAA520","#FF6B6B","#E0E0E0","#2c3e50","#e91e63"];
+const AVATAR_HAIRS=["#1a0a00","#4a2c00","#8B4513","#DAA520","#FF6B6B","#E0E0E0","#2c3e50","#e91e63","#a855f7","#06b6d4"];
 const AVATAR_EXPRESSIONS=[{id:"happy",l:"😊"},{id:"focused",l:"😤"},{id:"cool",l:"😎"},{id:"tired",l:"😴"}];
-const AVATAR_HAIR_STYLES=[{id:"short",l:"Curto"},{id:"medium",l:"Médio"},{id:"mohawk",l:"Moicano"},{id:"bald",l:"Careca"}];
+const AVATAR_HAIR_STYLES_M=[{id:"short",l:"Curto"},{id:"medium",l:"Médio"},{id:"mohawk",l:"Moicano"},{id:"bald",l:"Careca"}];
+const AVATAR_HAIR_STYLES_F=[{id:"long",l:"Longo"},{id:"ponytail",l:"Rabo"},{id:"bob",l:"Chanel"},{id:"curly",l:"Cacheado"}];
+const AVATAR_ACCESSORIES=[{id:"none",l:"Nenhum"},{id:"glasses",l:"Óculos"},{id:"earring",l:"Brinco"},{id:"headband",l:"Tiara"}];
 const PLAN_ICONS=["🏋️","🦾","🦵","🏃","🥊","🤸","⚡","🔥","💥","🎯"];
 const PLAN_COLORS=["#ef4444","#60a5fa","#34d399","#f59e0b","#a78bfa","#f97316","#ec4899","#22d3ee","#84cc16","#f0c040"];
 const SUBJECT_ICONS=["📝","🧩","📊","🏦","📰","💻","🌎","✍️","⚖️","🧬","📐","🗺️","🎭","🔬","📜","🧠","💡","🏛️"];
@@ -209,7 +282,7 @@ function checkAchievements(char, lv, existing=[]) {
 }
 
 const START={
-  username:"Jhonas",totalXP:30,
+  username:"",totalXP:30,
   attrs:{forca:6,resistencia:5,inteligencia:6,foco:5,mental:4,disciplina:4},
   stats:{totalWorkouts:0,totalStudyHours:0,activeDays:0,totalQuests:0,totalKm:0,totalRuns:0,prKm:0,totalQuestions:0,booksFinished:0,streakBest:0,bossesCleared:0},
   streak:{current:0,best:0,lastDate:""},
@@ -223,35 +296,54 @@ const START={
     {id:"phone",  name:"Plano Celular",amount:50, icon:"📱",paid:false,installments:null},
     {id:"inet",   name:"Internet",     amount:80, icon:"🌐",paid:false,installments:null},
   ]},
-  avatar:{skin:0,hair:0,hairStyle:"short",expression:"happy"},
+  avatar:{skin:0,hair:0,hairStyle:"short",expression:"happy",gender:"m",accessory:"none"},
   body:{weight:"",height:""},
-  habits:[],
-  moodLog:[],
-  simulados:[],
-  studyGoals:{},
-  xpHistory:[],
+  habits:[],moodLog:[],simulados:[],studyGoals:{},xpHistory:[],
+  modules:["estudo","treino","corrida","financeiro","livros","habitos"],
+  firebaseUid:"",
+  friends:[],
+  friendRequests:[],
 };
 
 // ═══════════════════════════════════════════════════════════════
 // AVATAR
 // ═══════════════════════════════════════════════════════════════
-function AvatarSVG({skin=0,hair=0,hairStyle="short",expression="happy",size=80}){
+function AvatarSVG({skin=0,hair=0,hairStyle="short",expression="happy",gender="m",accessory="none",size=80}){
   const sc=AVATAR_SKINS[skin]||AVATAR_SKINS[0];
   const hc=AVATAR_HAIRS[hair]||AVATAR_HAIRS[0];
   const mouth={happy:"M 38 58 Q 50 66 62 58",focused:"M 38 60 L 62 60",cool:"M 38 60 Q 50 56 62 60",tired:"M 40 62 Q 50 58 60 62"};
   const eyes={happy:"M 38 46 Q 41 42 44 46 M 56 46 Q 59 42 62 46",focused:"M 37 45 L 44 45 M 56 45 L 63 45",cool:"M 36 45 L 45 48 M 55 48 L 64 45",tired:"M 38 45 Q 41 48 44 45 M 56 45 Q 59 48 62 45"};
-  const hp={short:`M 22 50 Q 22 21 50 18 Q 78 21 78 50 Z`,medium:`M 18 58 Q 18 18 50 16 Q 82 18 82 58 Z`,mohawk:`M 42 28 L 50 8 L 58 28 Z`,bald:null};
+  // Male hair paths
+  const hpM={short:`M 22 50 Q 22 21 50 18 Q 78 21 78 50 Z`,medium:`M 18 58 Q 18 18 50 16 Q 82 18 82 58 Z`,mohawk:`M 42 28 L 50 8 L 58 28 Z`,bald:null};
+  // Female hair paths
+  const hpF={long:`M 18 58 Q 14 18 50 14 Q 86 18 82 58 Q 82 80 70 85 Q 50 90 30 85 Q 18 80 18 58 Z`,ponytail:`M 18 50 Q 18 18 50 14 Q 82 18 82 50 Z M 72 48 Q 80 55 75 70 Q 70 80 65 75 Q 60 65 68 55 Z`,bob:`M 18 58 Q 18 18 50 14 Q 82 18 82 58 Q 80 70 65 72 Q 50 74 35 72 Q 20 70 18 58 Z`,curly:`M 22 52 Q 16 20 50 14 Q 84 20 78 52 Q 82 60 78 65 Q 70 72 60 68 Q 74 60 72 52 Q 68 35 50 32 Q 32 35 28 52 Q 26 60 30 68 Q 20 72 22 65 Q 18 60 22 52 Z`};
+  const hp=gender==="f"?hpF:hpM;
+  // Lashes for female
+  const lashes=gender==="f"?"M 36 44 L 33 41 M 38 42 L 37 39 M 40 42 L 40 39 M 60 42 L 60 39 M 62 42 L 63 39 M 64 44 L 67 41":"";
+  // Body shape
+  const bodyF=gender==="f"?"M 41 77 Q 35 85 38 91 L 62 91 Q 65 85 59 77 Z":"";
+  const bodyM=gender==="m"?<rect x="41" y="77" width="18" height="14" rx="3" fill={sc}/>:null;
+  // Accessories
+  const glassesPath=accessory==="glasses"?<><rect x="32" y="42" width="14" height="10" rx="4" fill="none" stroke="#888" strokeWidth="1.5"/><rect x="54" y="42" width="14" height="10" rx="4" fill="none" stroke="#888" strokeWidth="1.5"/><line x1="46" y1="47" x2="54" y2="47" stroke="#888" strokeWidth="1.5"/></>:null;
+  const earringPath=accessory==="earring"?<><circle cx="22" cy="56" r="3" fill="#f0c040"/><circle cx="78" cy="56" r="3" fill="#f0c040"/></>:null;
+  const headbandPath=accessory==="headband"?<path d="M 24 42 Q 50 30 76 42" fill="none" stroke="#ec4899" strokeWidth="5" strokeLinecap="round"/>:null;
   return(
     <svg width={size} height={size} viewBox="0 0 100 100">
-      <rect x="41" y="77" width="18" height="14" rx="3" fill={sc}/>
+      {gender==="f"?<path d={bodyF} fill={sc}/>:bodyM}
       <ellipse cx="50" cy="95" rx="26" ry="9" fill="#1a1535"/>
       <circle cx="50" cy="50" r="28" fill={sc}/>
       {hp[hairStyle]&&<path d={hp[hairStyle]} fill={hc}/>}
+      {headbandPath}
       <path d={eyes[expression]||eyes.happy} stroke="#1a0a00" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
+      {gender==="f"&&lashes&&<path d={lashes} stroke="#1a0a00" strokeWidth="1.2" fill="none" strokeLinecap="round"/>}
+      {gender==="f"&&<ellipse cx="38" cy="54" rx="4" ry="2.5" fill="#f0a0a0" opacity="0.4"/> }
+      {gender==="f"&&<ellipse cx="62" cy="54" rx="4" ry="2.5" fill="#f0a0a0" opacity="0.4"/>}
       <path d="M 50 50 L 48 55 L 52 55" stroke={skin===0?"#e8a090":"#7a5230"} strokeWidth="1.5" fill="none" strokeLinecap="round"/>
       <path d={mouth[expression]||mouth.happy} stroke="#1a0a00" strokeWidth="2" fill="none" strokeLinecap="round"/>
       <ellipse cx="22" cy="52" rx="4" ry="6" fill={sc}/>
       <ellipse cx="78" cy="52" rx="4" ry="6" fill={sc}/>
+      {glassesPath}
+      {earringPath}
     </svg>
   );
 }
@@ -312,8 +404,17 @@ export default function App(){
   const [achPopup,setAchPopup]=useState(null);
   const [firstAccess,setFirstAccess]=useState(false);
   const [onboardName,setOnboardName]=useState("");
-  const [onboardAvatar,setOnboardAvatar]=useState({skin:0,hair:0,hairStyle:"short",expression:"happy"});
+  const [onboardAvatar,setOnboardAvatar]=useState({skin:0,hair:0,hairStyle:"short",expression:"happy",gender:"m",accessory:"none"});
+  const [onboardModules,setOnboardModules]=useState(["estudo","treino","corrida","financeiro","livros","habitos"]);
   const importRef=useRef(null);
+
+  // Friends & Social
+  const [friendsTab,setFriendsTab]=useState("lista");
+  const [searchUser,setSearchUser]=useState("");
+  const [searchResult,setSearchResult]=useState(null);
+  const [searchLoading,setSearchLoading]=useState(false);
+  const [friendProfiles,setFriendProfiles]=useState({});
+  const [friendsOpen,setFriendsOpen]=useState(false);
   const [mentorOpen,setMentorOpen]=useState(false);
   const [mentorLoading,setMentorLoading]=useState(false);
   const [mentorChat,setMentorChat]=useState([]);
@@ -442,7 +543,7 @@ export default function App(){
           streak:{...START.streak,...(c.streak||{})},
           boss:{...START.boss,...(c.boss||{})},
           books,concursos,
-          avatar:c.avatar||START.avatar,
+          avatar:{...START.avatar,...(c.avatar||{})},
           body:c.body||START.body,
           workoutPlans:c.workoutPlans||null,
           runs:c.runs||[],workoutLog:c.workoutLog||[],
@@ -453,6 +554,10 @@ export default function App(){
           simulados:c.simulados||[],
           studyGoals:c.studyGoals||{},
           xpHistory:c.xpHistory||[],
+          modules:c.modules||["estudo","treino","corrida","financeiro","livros","habitos"],
+          firebaseUid:c.firebaseUid||"",
+          friends:c.friends||[],
+          friendRequests:c.friendRequests||[],
         };
       } else { loaded={...START}; }
 
@@ -918,11 +1023,104 @@ export default function App(){
 
   // ── ONBOARDING ──
   const finishOnboarding=async()=>{
-    if(!onboardName.trim()) return;
-    const nc={...char,username:onboardName.trim(),avatar:onboardAvatar};
+    if(!onboardName.trim()||onboardModules.length===0) return;
+    const fbUid=`usr_${uid()}`;
+    const nc={...char,username:onboardName.trim(),avatar:onboardAvatar,modules:onboardModules,firebaseUid:fbUid,friends:[],friendRequests:[]};
     charRef.current=nc;setChar(nc);await save(nc,null,null);
+    // Save to Firebase
+    await fbSaveProfile(fbUid,{...nc,level:getLvl(nc.totalXP).cur.lv});
     setFirstAccess(false);
-    showToast(`Bem-vindo, ${onboardName.trim()}! ⚔️`,"#f0c040");
+    const g=onboardAvatar.gender==="f"?"Bem-vinda":"Bem-vindo";
+    showToast(`${g}, ${onboardName.trim()}! ⚔️`,"#f0c040");
+  };
+
+  // ── FIREBASE SYNC (save profile after any XP change) ──
+  const fbSync=useCallback(async(nc)=>{
+    if(!nc?.firebaseUid) return;
+    await fbSaveProfile(nc.firebaseUid,{...nc,level:getLvl(nc.totalXP).cur.lv});
+  },[]);
+
+  // ── FRIENDS ──
+  const handleSearchUser=async()=>{
+    if(!searchUser.trim()) return;
+    setSearchLoading(true);setSearchResult(null);
+    const result=await fbSearchUser(searchUser.trim());
+    if(!result||result.uid===char.firebaseUid) setSearchResult({notFound:true});
+    else setSearchResult(result);
+    setSearchLoading(false);
+  };
+
+  const handleSendRequest=async(toUid)=>{
+    if(!char.firebaseUid){showToast("Configure seu perfil primeiro","#ef4444");return;}
+    const ok=await fbSendFriendRequest(char.firebaseUid,toUid);
+    if(ok) showToast("Pedido enviado!","#a78bfa");
+    else showToast("Erro ao enviar pedido","#ef4444");
+    setSearchResult(null);setSearchUser("");
+  };
+
+  const handleAcceptFriend=async(friendUid)=>{
+    const ok=await fbAcceptFriend(char.firebaseUid,friendUid);
+    if(ok){
+      const nc={...char,friends:[...(char.friends||[]),friendUid],friendRequests:(char.friendRequests||[]).filter(id=>id!==friendUid)};
+      charRef.current=nc;setChar(nc);await save(nc,null,null);
+      showToast("Amigo adicionado! 🎉","#22c55e");
+      // Load friend profile
+      loadFriendProfile(friendUid);
+    }
+  };
+
+  const handleDeclineFriend=async(friendUid)=>{
+    await fbDeclineFriend(char.firebaseUid,friendUid);
+    const nc={...char,friendRequests:(char.friendRequests||[]).filter(id=>id!==friendUid)};
+    charRef.current=nc;setChar(nc);await save(nc,null,null);
+  };
+
+  const handleRemoveFriend=async(friendUid)=>{
+    await fbRemoveFriend(char.firebaseUid,friendUid);
+    const nc={...char,friends:(char.friends||[]).filter(id=>id!==friendUid)};
+    charRef.current=nc;setChar(nc);await save(nc,null,null);
+    setFriendProfiles(p=>{const n={...p};delete n[friendUid];return n;});
+    showToast("Amigo removido","#ef4444");
+  };
+
+  const loadFriendProfile=async(friendUid)=>{
+    const profile=await fbGetProfile(friendUid);
+    if(profile) setFriendProfiles(p=>({...p,[friendUid]:profile}));
+  };
+
+  // Load friend profiles on mount
+  useEffect(()=>{
+    if(char?.friends?.length){
+      char.friends.forEach(fid=>loadFriendProfile(fid));
+    }
+    // Listen for friend requests in real time
+    if(char?.firebaseUid){
+      const unsub=onSnapshot(doc(db,"users",char.firebaseUid),(snap)=>{
+        if(snap.exists()){
+          const data=snap.data();
+          const newRequests=data.friendRequests||[];
+          if(newRequests.length>(char.friendRequests||[]).length){
+            showToast("📩 Novo pedido de amizade!","#a78bfa");
+          }
+          const nc={...charRef.current,friendRequests:newRequests,friends:data.friends||charRef.current?.friends||[]};
+          charRef.current=nc;setChar(nc);save(nc,null,null);
+        }
+      });
+      return()=>unsub();
+    }
+  },[char?.firebaseUid]);
+
+  // ── MODULE HELPERS ──
+  const hasModule=(id)=>(char?.modules||[]).includes(id);
+  const toggleModule=async(id)=>{
+    const c=charRef.current;
+    const mods=c.modules||[];
+    const updated=mods.includes(id)?mods.filter(m=>m!==id):[...mods,id];
+    if(updated.length===0){showToast("Mantenha ao menos 1 módulo","#ef4444");return;}
+    const nc={...c,modules:updated};
+    charRef.current=nc;setChar(nc);await save(nc,null,null);
+    await fbSync(nc);
+    showToast(mods.includes(id)?"Módulo desativado":"Módulo ativado!","#f0c040");
   };
   const requestNotif=async()=>{
     if(!("Notification" in window)){showToast("Notificações não suportadas","#ef4444");return;}
@@ -1101,8 +1299,107 @@ Analise esses dados e responda de forma personalizada e útil. Seja específico,
   if(firstAccess) return(
     <div style={{background:"#07070f",height:"100vh",width:"100vw",display:"flex",flexDirection:"column",overflow:"hidden"}}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Crimson+Text:wght@400;600&display=swap');*{box-sizing:border-box;margin:0;padding:0}html,body,#root{height:100%;width:100%}.inp{background:#0f0f1e;border:1px solid #2a2848;border-radius:8px;color:#e8dfc0;font-family:Crimson Text,serif;font-size:15px;padding:10px 14px;width:100%;outline:none}.inp:focus{border-color:#f0c04066}@keyframes fadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}`}</style>
-      <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"24px 20px",gap:0}}>
-        <div style={{animation:"fadeIn 0.5s ease",width:"100%",maxWidth:400}}>
+      <div style={{flex:1,overflowY:"auto",padding:"24px 20px"}}>
+        <div style={{animation:"fadeIn 0.5s ease",width:"100%",maxWidth:400,margin:"0 auto"}}>
+          <div style={{textAlign:"center",marginBottom:24}}>
+            <div style={{fontSize:48,marginBottom:8}}>⚔️</div>
+            <div style={{fontFamily:"Cinzel,serif",fontSize:18,fontWeight:900,color:"#f0c040",letterSpacing:3,marginBottom:4}}>YOUR ROUTINE</div>
+            <div style={{fontSize:12,color:"#555",fontFamily:"Cinzel,serif",letterSpacing:1}}>Sua jornada começa aqui</div>
+          </div>
+
+          {/* Gender selection */}
+          <div style={{marginBottom:14}}>
+            <div style={{fontFamily:"Cinzel,serif",fontSize:9,color:"#555",letterSpacing:3,marginBottom:8}}>GÊNERO DO PERSONAGEM</div>
+            <div style={{display:"flex",gap:8}}>
+              {[{id:"m",l:"♂ Masculino"},{id:"f",l:"♀ Feminino"}].map(g=>(
+                <button key={g.id} onClick={()=>setOnboardAvatar(a=>({...a,gender:g.id,hairStyle:g.id==="m"?"short":"long"}))} style={{flex:1,padding:"10px",borderRadius:10,border:`2px solid ${onboardAvatar.gender===g.id?"#f0c040":"#2a2848"}`,background:onboardAvatar.gender===g.id?"#1a1400":"#0f0f1e",color:onboardAvatar.gender===g.id?"#f0c040":"#555",fontFamily:"Cinzel,serif",fontSize:11,cursor:"pointer"}}>
+                  {g.l}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Avatar preview */}
+          <div style={{textAlign:"center",marginBottom:16}}>
+            <AvatarSVG {...onboardAvatar} size={90}/>
+          </div>
+
+          {/* Name */}
+          <div style={{marginBottom:14}}>
+            <div style={{fontFamily:"Cinzel,serif",fontSize:9,color:"#555",letterSpacing:3,marginBottom:6}}>
+              {onboardAvatar.gender==="f"?"SEU NOME DE GUERREIRA":"SEU NOME DE GUERREIRO"}
+            </div>
+            <input className="inp" value={onboardName} onChange={e=>setOnboardName(e.target.value)} placeholder="Como quer ser chamado?" style={{fontSize:16,padding:"12px 14px",textAlign:"center"}}/>
+          </div>
+
+          {/* Avatar customization */}
+          <div style={{background:"#0f0f1e",border:"1px solid #1a1838",borderRadius:12,padding:"14px",marginBottom:14}}>
+            <div style={{fontFamily:"Cinzel,serif",fontSize:9,color:"#555",letterSpacing:3,marginBottom:10}}>PERSONALIZAR AVATAR</div>
+
+            <div style={{fontSize:9,color:"#444",marginBottom:4}}>Expressão</div>
+            <div style={{display:"flex",gap:8,marginBottom:10,justifyContent:"center"}}>{AVATAR_EXPRESSIONS.map(e=><button key={e.id} onClick={()=>setOnboardAvatar(a=>({...a,expression:e.id}))} style={{fontSize:22,background:"none",border:"none",cursor:"pointer",opacity:onboardAvatar.expression===e.id?1:0.3}}>{e.l}</button>)}</div>
+
+            <div style={{fontSize:9,color:"#444",marginBottom:4}}>Tom de pele</div>
+            <div style={{display:"flex",gap:8,marginBottom:10,justifyContent:"center"}}>{AVATAR_SKINS.map((s,i)=><button key={i} onClick={()=>setOnboardAvatar(a=>({...a,skin:i}))} style={{width:26,height:26,borderRadius:"50%",background:s,border:`3px solid ${onboardAvatar.skin===i?"#f0c040":"transparent"}`,cursor:"pointer"}}/>)}</div>
+
+            <div style={{fontSize:9,color:"#444",marginBottom:4}}>Cor do cabelo</div>
+            <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap",justifyContent:"center"}}>{AVATAR_HAIRS.map((h,i)=><button key={i} onClick={()=>setOnboardAvatar(a=>({...a,hair:i}))} style={{width:22,height:22,borderRadius:"50%",background:h,border:`3px solid ${onboardAvatar.hair===i?"#f0c040":"transparent"}`,cursor:"pointer"}}/>)}</div>
+
+            <div style={{fontSize:9,color:"#444",marginBottom:4}}>Estilo do cabelo</div>
+            <div style={{display:"flex",gap:5,marginBottom:10,flexWrap:"wrap",justifyContent:"center"}}>
+              {(onboardAvatar.gender==="f"?AVATAR_HAIR_STYLES_F:AVATAR_HAIR_STYLES_M).map(s=>(
+                <button key={s.id} onClick={()=>setOnboardAvatar(a=>({...a,hairStyle:s.id}))} style={{padding:"4px 10px",borderRadius:7,border:`1px solid ${onboardAvatar.hairStyle===s.id?"#f0c04066":"#2a2848"}`,background:onboardAvatar.hairStyle===s.id?"#1a1400":"transparent",color:onboardAvatar.hairStyle===s.id?"#f0c040":"#555",fontFamily:"Cinzel,serif",fontSize:9,cursor:"pointer"}}>{s.l}</button>
+              ))}
+            </div>
+
+            <div style={{fontSize:9,color:"#444",marginBottom:4}}>Acessório</div>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"center"}}>
+              {AVATAR_ACCESSORIES.map(a=>(
+                <button key={a.id} onClick={()=>setOnboardAvatar(av=>({...av,accessory:a.id}))} style={{padding:"4px 10px",borderRadius:7,border:`1px solid ${onboardAvatar.accessory===a.id?"#a78bfa66":"#2a2848"}`,background:onboardAvatar.accessory===a.id?"#1a1535":"transparent",color:onboardAvatar.accessory===a.id?"#a78bfa":"#555",fontFamily:"Cinzel,serif",fontSize:9,cursor:"pointer"}}>{a.l}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Modules */}
+          <div style={{background:"#0f0f1e",border:"1px solid #1a1838",borderRadius:12,padding:"14px",marginBottom:14}}>
+            <div style={{fontFamily:"Cinzel,serif",fontSize:9,color:"#555",letterSpacing:3,marginBottom:10}}>ESCOLHA SEUS MÓDULOS</div>
+            <div style={{fontSize:10,color:"#444",marginBottom:10}}>Selecione as funcionalidades que quer usar. Pode mudar depois.</div>
+            {ALL_MODULES.map(m=>{
+              const on=onboardModules.includes(m.id);
+              return(
+                <button key={m.id} onClick={()=>setOnboardModules(prev=>prev.includes(m.id)?prev.filter(x=>x!==m.id):[...prev,m.id])} style={{width:"100%",background:on?`${m.color}18`:"transparent",border:`1px solid ${on?m.color+"55":"#2a2848"}`,borderRadius:9,padding:"10px 12px",marginBottom:6,display:"flex",alignItems:"center",gap:10,cursor:"pointer",textAlign:"left"}}>
+                  <div style={{width:22,height:22,borderRadius:5,border:`2px solid ${on?m.color:"#2a2848"}`,background:on?m.color+"33":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    {on&&<span style={{color:m.color,fontSize:11,fontWeight:900}}>✓</span>}
+                  </div>
+                  <span style={{fontSize:18}}>{m.icon}</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:12,color:on?"#e8dfc0":"#666",fontFamily:"Cinzel,serif"}}>{m.label}</div>
+                    <div style={{fontSize:10,color:"#444"}}>{m.desc}</div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Start button */}
+          <button onClick={finishOnboarding} disabled={!onboardName.trim()||onboardModules.length===0} style={{width:"100%",padding:"14px",borderRadius:12,background:onboardName.trim()&&onboardModules.length>0?"linear-gradient(135deg,#f0c040,#d4a017)":"#1a1838",border:"none",color:onboardName.trim()?"#000":"#333",fontFamily:"Cinzel,serif",fontSize:14,fontWeight:700,letterSpacing:2,cursor:onboardName.trim()?"pointer":"not-allowed",marginBottom:14,transition:"all 0.2s"}}>
+            ⚔️ {onboardAvatar.gender==="f"?"INICIAR SUA JORNADA":"INICIAR SUA JORNADA"}
+          </button>
+
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+            <div style={{flex:1,height:1,background:"#1a1838"}}/>
+            <span style={{fontFamily:"Cinzel,serif",fontSize:9,color:"#333",letterSpacing:2}}>OU</span>
+            <div style={{flex:1,height:1,background:"#1a1838"}}/>
+          </div>
+          <input ref={importRef} type="file" accept=".json" onChange={importData} style={{display:"none"}}/>
+          <button onClick={()=>importRef.current?.click()} style={{width:"100%",padding:"12px",borderRadius:12,background:"transparent",border:"1px solid #22c55e44",color:"#22c55e",fontFamily:"Cinzel,serif",fontSize:12,letterSpacing:2,cursor:"pointer"}}>
+            📥 RESTAURAR BACKUP
+          </button>
+          <div style={{textAlign:"center",fontSize:10,color:"#333",marginTop:8,fontFamily:"Cinzel,serif"}}>Já tem uma conta? Importe seu arquivo .json</div>
+        </div>
+      </div>
+    </div>
+  );
           {/* Header */}
           <div style={{textAlign:"center",marginBottom:28}}>
             <div style={{fontSize:52,marginBottom:10}}>⚔️</div>
@@ -1132,29 +1429,6 @@ Analise esses dados e responda de forma personalizada e útil. Seja específico,
             <div style={{display:"flex",gap:8,marginBottom:6,justifyContent:"center"}}>{AVATAR_HAIRS.map((h,i)=><button key={i} onClick={()=>setOnboardAvatar(a=>({...a,hair:i}))} style={{width:22,height:22,borderRadius:"50%",background:h,border:`3px solid ${onboardAvatar.hair===i?"#f0c040":"transparent"}`,cursor:"pointer"}}/>)}</div>
             <div style={{display:"flex",gap:6,justifyContent:"center"}}>{AVATAR_HAIR_STYLES.map(s=><button key={s.id} onClick={()=>setOnboardAvatar(a=>({...a,hairStyle:s.id}))} style={{padding:"4px 10px",borderRadius:7,border:`1px solid ${onboardAvatar.hairStyle===s.id?"#f0c04066":"#2a2848"}`,background:onboardAvatar.hairStyle===s.id?"#1a1400":"transparent",color:onboardAvatar.hairStyle===s.id?"#f0c040":"#555",fontFamily:"Cinzel,serif",fontSize:9,cursor:"pointer"}}>{s.l}</button>)}</div>
           </div>
-
-          {/* Start button */}
-          <button onClick={finishOnboarding} disabled={!onboardName.trim()} style={{width:"100%",padding:"14px",borderRadius:12,background:onboardName.trim()?"linear-gradient(135deg,#f0c040,#d4a017)":"#1a1838",border:"none",color:onboardName.trim()?"#000":"#333",fontFamily:"Cinzel,serif",fontSize:14,fontWeight:700,letterSpacing:2,cursor:onboardName.trim()?"pointer":"not-allowed",marginBottom:14,transition:"all 0.2s"}}>
-            ⚔️ INICIAR JORNADA
-          </button>
-
-          {/* Divider */}
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
-            <div style={{flex:1,height:1,background:"#1a1838"}}/>
-            <span style={{fontFamily:"Cinzel,serif",fontSize:9,color:"#333",letterSpacing:2}}>OU</span>
-            <div style={{flex:1,height:1,background:"#1a1838"}}/>
-          </div>
-
-          {/* Import backup */}
-          <input ref={importRef} type="file" accept=".json" onChange={importData} style={{display:"none"}}/>
-          <button onClick={()=>importRef.current?.click()} style={{width:"100%",padding:"12px",borderRadius:12,background:"transparent",border:"1px solid #22c55e44",color:"#22c55e",fontFamily:"Cinzel,serif",fontSize:12,letterSpacing:2,cursor:"pointer"}}>
-            📥 RESTAURAR BACKUP
-          </button>
-          <div style={{textAlign:"center",fontSize:10,color:"#333",marginTop:8,fontFamily:"Cinzel,serif"}}>Já tem uma conta? Importe seu arquivo .json</div>
-        </div>
-      </div>
-    </div>
-  );
 
   const {cur,nxt}=getLvl(char.totalXP);
   const xpInLvl=char.totalXP-cur.xp,xpNeeded=nxt?nxt.xp-cur.xp:1;
@@ -1321,6 +1595,114 @@ Analise esses dados e responda de forma personalizada e útil. Seja específico,
         </div>
       </div>}
 
+      {/* ── FRIENDS PANEL ── */}
+      {friendsOpen&&<div style={{position:"fixed",inset:0,zIndex:250,display:"flex",flexDirection:"column",background:"#07070fee"}}>
+        <div style={{background:"linear-gradient(135deg,#1a0d2e,#0d0820)",borderBottom:"1px solid #a78bfa33",padding:"14px 16px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+          <div style={{width:40,height:40,borderRadius:"50%",background:"linear-gradient(135deg,#ec4899,#a855f7)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>👥</div>
+          <div style={{flex:1}}>
+            <div style={{fontFamily:"Cinzel,serif",fontSize:13,color:"#ec4899",fontWeight:700,letterSpacing:2}}>AMIGOS</div>
+            <div style={{fontSize:10,color:"#555"}}>Seu código: <span style={{color:"#f0c040",fontFamily:"Cinzel,serif"}}>{char.firebaseUid}</span></div>
+          </div>
+          <button onClick={()=>setFriendsOpen(false)} style={{background:"none",border:"none",color:"#555",fontSize:22,cursor:"pointer"}}>✕</button>
+        </div>
+        <div style={{flex:1,overflowY:"auto",padding:"14px"}}>
+          <STabs tabs={[{id:"lista",i:"👥",l:"Amigos",c:"#ec4899"},{id:"buscar",i:"🔍",l:"Buscar",c:"#60a5fa"},{id:"pedidos",i:"📩",l:"Pedidos",c:"#f0c040"}]} val={friendsTab} onChange={setFriendsTab}/>
+
+          {friendsTab==="buscar"&&<>
+            <Card style={{marginBottom:12}}>
+              <Lbl>BUSCAR POR NOME DE USUÁRIO</Lbl>
+              <div style={{display:"flex",gap:6}}>
+                <input className="inp" value={searchUser} onChange={e=>setSearchUser(e.target.value)} placeholder="Nome exato do usuário..." style={{flex:1}} onKeyDown={e=>e.key==="Enter"&&handleSearchUser()}/>
+                <button onClick={handleSearchUser} style={{padding:"9px 14px",borderRadius:8,background:"#1a1535",border:"1px solid #60a5fa55",color:"#60a5fa",fontFamily:"Cinzel,serif",fontSize:10,cursor:"pointer",flexShrink:0}}>{searchLoading?"...":"🔍"}</button>
+              </div>
+            </Card>
+            {searchResult&&(searchResult.notFound?(
+              <div style={{textAlign:"center",color:"#555",fontSize:12,padding:"20px 0"}}>Usuário não encontrado</div>
+            ):(
+              <Card glow="#ec4899">
+                <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <AvatarSVG {...(searchResult.avatar||{})} size={50}/>
+                  <div style={{flex:1}}>
+                    <div style={{fontFamily:"Cinzel,serif",fontSize:14,color:"#f0c040"}}>{searchResult.username}</div>
+                    <div style={{fontSize:11,color:"#555"}}>Lv.{searchResult.level||1} · {searchResult.streak||0}🔥 · {(searchResult.unlockedAch||[]).length} conquistas</div>
+                  </div>
+                  {(char.friends||[]).includes(searchResult.uid)?(
+                    <div style={{fontFamily:"Cinzel,serif",fontSize:9,color:"#22c55e"}}>✓ AMIGO</div>
+                  ):(
+                    <button onClick={()=>handleSendRequest(searchResult.uid)} style={{padding:"8px 12px",borderRadius:8,background:"linear-gradient(135deg,#ec4899,#a855f7)",border:"none",color:"#fff",fontFamily:"Cinzel,serif",fontSize:9,cursor:"pointer"}}>+ ADICIONAR</button>
+                  )}
+                </div>
+              </Card>
+            ))}
+          </>}
+
+          {friendsTab==="pedidos"&&<>
+            {(char.friendRequests||[]).length===0?(
+              <div style={{textAlign:"center",color:"#555",fontSize:12,padding:"30px 0"}}>
+                <div style={{fontSize:36,marginBottom:8}}>📩</div>
+                <div>Nenhum pedido pendente</div>
+              </div>
+            ):(char.friendRequests||[]).map(fid=>{
+              const fp=friendProfiles[fid];
+              return(
+                <Card key={fid} glow="#f0c04033" style={{marginBottom:8}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    {fp?<AvatarSVG {...(fp.avatar||{})} size={42}/>:<div style={{width:42,height:42,borderRadius:"50%",background:"#1a1535",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>👤</div>}
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:13,color:"#e8dfc0"}}>{fp?.username||fid}</div>
+                      <div style={{fontSize:10,color:"#555"}}>Quer ser seu amigo</div>
+                    </div>
+                    <div style={{display:"flex",gap:6}}>
+                      <button onClick={()=>handleAcceptFriend(fid)} style={{padding:"7px 11px",borderRadius:7,background:"#22c55e22",border:"1px solid #22c55e55",color:"#22c55e",fontFamily:"Cinzel,serif",fontSize:9,cursor:"pointer"}}>✓</button>
+                      <button onClick={()=>handleDeclineFriend(fid)} style={{padding:"7px 11px",borderRadius:7,background:"#ef444422",border:"1px solid #ef444455",color:"#ef4444",fontSize:12,cursor:"pointer"}}>✕</button>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </>}
+
+          {friendsTab==="lista"&&<>
+            {(char.friends||[]).length===0?(
+              <div style={{textAlign:"center",color:"#555",fontSize:12,padding:"30px 0"}}>
+                <div style={{fontSize:36,marginBottom:8}}>👥</div>
+                <div>Nenhum amigo ainda</div>
+                <div style={{fontSize:10,marginTop:4,color:"#333"}}>Busque pelo nome de usuário</div>
+              </div>
+            ):(char.friends||[]).map(fid=>{
+              const fp=friendProfiles[fid];
+              if(!fp) return null;
+              const friendAchs=(fp.unlockedAch||[]).map(id=>ACHIEVEMENTS.find(a=>a.id===id)).filter(Boolean);
+              return(
+                <Card key={fid} glow="#ec489933" style={{marginBottom:10}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                    <AvatarSVG {...(fp.avatar||{})} size={50}/>
+                    <div style={{flex:1}}>
+                      <div style={{fontFamily:"Cinzel,serif",fontSize:14,color:"#f0c040"}}>{fp.username}</div>
+                      <div style={{fontSize:11,color:"#555"}}>Lv.{fp.level||1} · {fp.streak||0}🔥 dias</div>
+                      <div style={{fontSize:10,color:"#a78bfa"}}>{fp.totalXP||0} XP total</div>
+                    </div>
+                    <button onClick={()=>handleRemoveFriend(fid)} style={{color:"#333",background:"none",border:"none",fontSize:14,cursor:"pointer"}}>🗑</button>
+                  </div>
+                  {friendAchs.length>0&&<>
+                    <Lbl mb={6} color="#f0c040">CONQUISTAS ({friendAchs.length})</Lbl>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                      {friendAchs.slice(0,10).map(a=>(
+                        <div key={a.id} title={a.name} style={{background:"#1a1400",border:"1px solid #f0c04033",borderRadius:7,padding:"4px 8px",display:"flex",alignItems:"center",gap:4}}>
+                          <span style={{fontSize:14}}>{a.icon}</span>
+                          <span style={{fontFamily:"Cinzel,serif",fontSize:8,color:"#f0c040"}}>{a.name}</span>
+                        </div>
+                      ))}
+                      {friendAchs.length>10&&<div style={{fontSize:10,color:"#555",alignSelf:"center"}}>+{friendAchs.length-10}</div>}
+                    </div>
+                  </>}
+                </Card>
+              );
+            })}
+          </>}
+        </div>
+      </div>}
+
       {/* HEADER */}
       <div style={{background:"linear-gradient(180deg,#0d0820,#08080f)",borderBottom:"1px solid #1a1838",padding:"11px 14px 8px",position:"sticky",top:0,zIndex:100,flexShrink:0}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
@@ -1335,9 +1717,12 @@ Analise esses dados e responda de forma personalizada e útil. Seja específico,
               </div>
             </div>
           </div>
-          <div style={{textAlign:"right"}}>
+          <div style={{textAlign:"right",display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
             <div style={{fontFamily:"Cinzel,serif",fontSize:22,fontWeight:900,color:cur.color,lineHeight:1}}>Lv.{cur.lv}</div>
-            <div style={{fontSize:8,color:"#444"}}>{cur.title}</div>
+            <button onClick={()=>setFriendsOpen(true)} style={{position:"relative",background:"#1a1535",border:"1px solid #ec489955",borderRadius:8,padding:"3px 8px",color:"#ec4899",fontFamily:"Cinzel,serif",fontSize:9,cursor:"pointer",letterSpacing:1}}>
+              👥 {(char.friends||[]).length}
+              {(char.friendRequests||[]).length>0&&<span style={{position:"absolute",top:-4,right:-4,width:12,height:12,borderRadius:"50%",background:"#f0c040",fontSize:7,color:"#000",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Cinzel,serif",fontWeight:900}}>{(char.friendRequests||[]).length}</span>}
+            </button>
           </div>
         </div>
         <div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
@@ -1363,20 +1748,29 @@ Analise esses dados e responda de forma personalizada e útil. Seja específico,
           </div>
           <div style={{display:"flex",gap:12}}>
             <AvatarSVG {...(char.avatar||{})} size={62}/>
-            <div style={{flex:1}}>
+            <div style={{flex:1,overflowY:"auto"}}>
+              <div style={{fontSize:9,color:"#666",marginBottom:3}}>Gênero</div>
+              <div style={{display:"flex",gap:5,marginBottom:7}}>
+                {[{id:"m",l:"♂"},{id:"f",l:"♀"}].map(g=><button key={g.id} className="tbtn" onClick={()=>saveAvatar({gender:g.id,hairStyle:g.id==="m"?"short":"long"})} style={{flex:1,padding:"5px",borderRadius:7,border:`1px solid ${(char.avatar?.gender||"m")===g.id?"#f0c04066":"#2a2848"}`,background:(char.avatar?.gender||"m")===g.id?"#1a1400":"transparent",color:(char.avatar?.gender||"m")===g.id?"#f0c040":"#555",fontFamily:"Cinzel,serif",fontSize:11}}>{g.l}</button>)}
+              </div>
               <div style={{fontSize:9,color:"#666",marginBottom:3}}>Expressão</div>
               <div style={{display:"flex",gap:5,marginBottom:7}}>{AVATAR_EXPRESSIONS.map(e=><button key={e.id} className="tbtn" onClick={()=>saveAvatar({expression:e.id})} style={{fontSize:17,opacity:(char.avatar?.expression||"happy")===e.id?1:0.3}}>{e.l}</button>)}</div>
               <div style={{fontSize:9,color:"#666",marginBottom:3}}>Cabelo</div>
-              <div style={{display:"flex",gap:4,marginBottom:7}}>{AVATAR_HAIR_STYLES.map(s=><button key={s.id} className="tbtn" onClick={()=>saveAvatar({hairStyle:s.id})} style={{fontSize:8,fontFamily:"Cinzel,serif",color:(char.avatar?.hairStyle||"short")===s.id?"#f0c040":"#444",background:(char.avatar?.hairStyle||"short")===s.id?"#1a1400":"transparent",border:`1px solid ${(char.avatar?.hairStyle||"short")===s.id?"#f0c04055":"#2a2848"}`,borderRadius:5,padding:"2px 5px"}}>{s.l}</button>)}</div>
+              <div style={{display:"flex",gap:4,marginBottom:7,flexWrap:"wrap"}}>
+                {((char.avatar?.gender||"m")==="f"?AVATAR_HAIR_STYLES_F:AVATAR_HAIR_STYLES_M).map(s=><button key={s.id} className="tbtn" onClick={()=>saveAvatar({hairStyle:s.id})} style={{fontSize:8,fontFamily:"Cinzel,serif",color:(char.avatar?.hairStyle||"short")===s.id?"#f0c040":"#444",background:(char.avatar?.hairStyle||"short")===s.id?"#1a1400":"transparent",border:`1px solid ${(char.avatar?.hairStyle||"short")===s.id?"#f0c04055":"#2a2848"}`,borderRadius:5,padding:"2px 5px"}}>{s.l}</button>)}
+              </div>
+              <div style={{fontSize:9,color:"#666",marginBottom:3}}>Acessório</div>
+              <div style={{display:"flex",gap:4,marginBottom:7,flexWrap:"wrap"}}>
+                {AVATAR_ACCESSORIES.map(a=><button key={a.id} className="tbtn" onClick={()=>saveAvatar({accessory:a.id})} style={{fontSize:8,fontFamily:"Cinzel,serif",color:(char.avatar?.accessory||"none")===a.id?"#a78bfa":"#444",background:(char.avatar?.accessory||"none")===a.id?"#1a1535":"transparent",border:`1px solid ${(char.avatar?.accessory||"none")===a.id?"#a78bfa55":"#2a2848"}`,borderRadius:5,padding:"2px 5px"}}>{a.l}</button>)}
+              </div>
               <div style={{fontSize:9,color:"#666",marginBottom:3}}>Tom de pele</div>
               <div style={{display:"flex",gap:5,marginBottom:7}}>{AVATAR_SKINS.map((s,i)=><button key={i} className="tbtn" onClick={()=>saveAvatar({skin:i})} style={{width:18,height:18,borderRadius:"50%",background:s,border:`2px solid ${(char.avatar?.skin||0)===i?"#f0c040":"transparent"}`,flexShrink:0}}/>)}</div>
-              <div style={{fontSize:9,color:"#666",marginBottom:3}}>Cabelo cor</div>
-              <div style={{display:"flex",gap:5}}>{AVATAR_HAIRS.map((h,i)=><button key={i} className="tbtn" onClick={()=>saveAvatar({hair:i})} style={{width:18,height:18,borderRadius:"50%",background:h,border:`2px solid ${(char.avatar?.hair||0)===i?"#f0c040":"transparent"}`,flexShrink:0}}/>)}</div>
+              <div style={{fontSize:9,color:"#666",marginBottom:3}}>Cor do cabelo</div>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{AVATAR_HAIRS.map((h,i)=><button key={i} className="tbtn" onClick={()=>saveAvatar({hair:i})} style={{width:18,height:18,borderRadius:"50%",background:h,border:`2px solid ${(char.avatar?.hair||0)===i?"#f0c040":"transparent"}`,flexShrink:0}}/>)}</div>
             </div>
           </div>
         </div>
       )}
-
       {/* CONTENT */}
       <div style={{flex:1,overflowY:"auto",paddingBottom:68,position:"relative",zIndex:10}}>
 
@@ -1999,9 +2393,16 @@ Analise esses dados e responda de forma personalizada e útil. Seja específico,
 
       {/* NAV */}
       <div style={{position:"fixed",bottom:0,left:0,width:"100%",background:"#09080f",borderTop:"1px solid #181530",display:"flex",justifyContent:"space-around",padding:"6px 0 10px",zIndex:100,flexShrink:0}}>
-        {[{id:"home",i:"🏠",l:"Home"},{id:"daily",i:"⚔️",l:"Daily"},{id:"study",i:"📚",l:"Estudar"},{id:"body",i:"💪",l:"Treino"},{id:"life",i:"💵",l:"Life"}].map(t=>(
+        {[
+          {id:"home",i:"🏠",l:"Home",always:true},
+          {id:"daily",i:"⚔️",l:"Daily",always:true},
+          {id:"study",i:"📚",l:"Estudar",mod:"estudo"},
+          {id:"body",i:"💪",l:"Treino",mod:"treino"},
+          {id:"life",i:"💵",l:"Life",always:true},
+        ].filter(t=>t.always||hasModule(t.mod)).map(t=>(
           <button key={t.id} className="tbtn" onClick={()=>setTab(t.id)} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:1,padding:"3px 9px",borderRadius:9,background:tab===t.id?"#1a1535":"transparent",position:"relative"}}>
             {t.id==="study"&&weakSubs.length>0&&<div style={{position:"absolute",top:0,right:5,width:6,height:6,borderRadius:"50%",background:"#ef4444"}}/>}
+            {t.id==="life"&&(char.friendRequests||[]).length>0&&<div style={{position:"absolute",top:0,right:5,width:6,height:6,borderRadius:"50%",background:"#f0c040"}}/>}
             <div style={{fontSize:19}}>{t.i}</div>
             <div style={{fontFamily:"Cinzel,serif",fontSize:7,letterSpacing:1,color:tab===t.id?"#f0c040":"#3a3555"}}>{t.l.toUpperCase()}</div>
           </button>
