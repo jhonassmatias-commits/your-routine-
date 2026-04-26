@@ -309,11 +309,16 @@ export default function App(){
   const [floats,setFloats]=useState([]);
   const [lvlUpMsg,setLvlUp]=useState(null);
   const [toast,setToast]=useState(null);
-  const [achPopup,setAchPopup]=useState(null); // newly unlocked achievement
+  const [achPopup,setAchPopup]=useState(null);
   const [firstAccess,setFirstAccess]=useState(false);
   const [onboardName,setOnboardName]=useState("");
   const [onboardAvatar,setOnboardAvatar]=useState({skin:0,hair:0,hairStyle:"short",expression:"happy"});
   const importRef=useRef(null);
+  const [mentorOpen,setMentorOpen]=useState(false);
+  const [mentorLoading,setMentorLoading]=useState(false);
+  const [mentorChat,setMentorChat]=useState([]);
+  const [mentorInput,setMentorInput]=useState("");
+  const mentorEndRef=useRef(null);
 
   const [studyTab,setStudyTab]=useState("timer");
   const [bodyTab,setBodyTab]=useState("treino");
@@ -912,8 +917,123 @@ export default function App(){
   const requestNotif=async()=>{
     if(!("Notification" in window)){showToast("Notificações não suportadas","#ef4444");return;}
     const p=await Notification.requestPermission();
-    if(p==="granted"){showToast("Notificações ativadas! ✓","#22c55e");}
-    else showToast("Permissão negada","#ef4444");
+    if(p==="granted"){
+      showToast("Notificações ativadas! ✓","#22c55e");
+      scheduleSmartNotifs();
+    } else showToast("Permissão negada","#ef4444");
+  };
+
+  // ── SMART NOTIFICATIONS ──
+  const scheduleSmartNotifs=()=>{
+    if(!("Notification" in window)||Notification.permission!=="granted") return;
+    const c=charRef.current||char;
+    if(!c) return;
+    const now=new Date();
+    const hour=now.getHours();
+    // Only send between 8h-22h
+    if(hour<8||hour>=22) return;
+    const alerts=[];
+    // Streak at risk — no cores done and it's after 8pm
+    if(hour>=20){
+      const cores=QUESTS.filter(q=>q.core).map(q=>q.id);
+      const q=questsRef.current||{};
+      if(!cores.every(id=>q[id])) alerts.push({title:"⚠️ Streak em risco!",body:`Complete Estudar, Treinar e Dormir bem para manter seu streak de ${c.streak?.current||0} dias!`});
+    }
+    // No workout in 3 days
+    const lastWorkout=c.workoutLog?.[0];
+    if(lastWorkout){
+      const diff=Math.floor((now-new Date(lastWorkout.date))/(864e5));
+      if(diff>=3) alerts.push({title:"💪 Faz 3 dias sem treino!",body:"Seu corpo está pedindo movimento. Que tal o Treino A hoje?"});
+    }
+    // Boss at risk — week ending soon
+    const bossGoals=BOSS_POOL[c.boss?.type||0].goals;
+    const anyUnfinished=Object.entries(bossGoals).some(([k])=>{
+      const pctV={studyMin:(c.boss?.studyMin||0)/bossGoals.studyMin,trainCount:(c.boss?.trainCount||0)/(bossGoals.trainCount||1),questions:(c.boss?.questions||0)/(bossGoals.questions||1),runKm:(c.boss?.runKm||0)/(bossGoals.runKm||1)};
+      return bossGoals[k]&&(pctV[k]||0)<1;
+    });
+    if(anyUnfinished&&new Date().getDay()===6) alerts.push({title:"👹 Boss semanal!",body:"É sábado! Complete o boss desta semana antes de domingo."});
+    // Send one alert (don't spam)
+    if(alerts.length>0){
+      const a=alerts[0];
+      new Notification(a.title,{body:a.body,icon:"/icon.png"});
+    }
+  };
+
+  // Run smart notifs check on load and every hour
+  useEffect(()=>{
+    const run=()=>scheduleSmartNotifs();
+    const iv=setInterval(run,3600000); // every hour
+    return()=>clearInterval(iv);
+  },[]);
+
+  // ── BUILD CONTEXT FOR AI ──
+  const buildMentorContext=(c)=>{
+    const ac=c.concursos?.find(cc=>cc.id===c.activeConcurso)||c.concursos?.[0];
+    const lastWorkout=c.workoutLog?.[0];
+    const daysSinceWorkout=lastWorkout?Math.floor((new Date()-new Date(lastWorkout.date))/(864e5)):null;
+    const lastRun=c.runs?.[0];
+    const daysSinceRun=lastRun?Math.floor((new Date()-new Date(lastRun.date))/(864e5)):null;
+    const weakSubs=(ac?.subjects||[]).filter(s=>{const d=(ac.questions||{})[s.id];return d&&d.total>=10&&(d.correct/d.total)<0.80;});
+    const simAvg=(c.simulados||[]).length>0?Math.round((c.simulados||[]).reduce((a,s)=>a+Math.round((s.score/s.total)*100),0)/(c.simulados||[]).length):null;
+    const totalStudyMin=Object.values(ac?.subjectMin||{}).reduce((a,b)=>a+b,0);
+    const boss=BOSS_POOL[c.boss?.type||0];
+    return `Você é um mentor motivacional e estratégico para um app de RPG de produtividade chamado "RPG da Vida Real". Seu tom é direto, encorajador e personalizado. Use emojis com moderação. Responda sempre em português brasileiro.
+
+DADOS DO USUÁRIO (${c.username||"Jogador"}):
+- Nível: ${getLvl(c.totalXP).cur.lv} (${getLvl(c.totalXP).cur.title}) — ${c.totalXP} XP total
+- Streak: ${c.streak?.current||0} dias (recorde: ${c.streak?.best||0})
+- Concurso ativo: ${ac?.name||"Nenhum"}
+- Total horas estudo: ${c.stats?.totalStudyHours||0}h
+- Horas de estudo (total minutos): ${Math.round(totalStudyMin/60*10)/10}h
+- Matérias fracas (<80%): ${weakSubs.map(s=>s.name).join(", ")||"Nenhuma"}
+- Simulados: ${(c.simulados||[]).length} realizados${simAvg?`, média ${simAvg}%`:""}
+- Treinos: ${c.stats?.totalWorkouts||0} no total${daysSinceWorkout!==null?`, último há ${daysSinceWorkout} dias`:""}
+- Corrida: ${c.stats?.totalKm||0}km total, recorde ${c.stats?.prKm||0}km${daysSinceRun!==null?`, última há ${daysSinceRun} dias`:""}
+- Boss semanal: ${boss.name} — ${c.boss?.claimed?"DERROTADO ✓":"em andamento"}
+- Hábitos ativos: ${(c.habits||[]).length}
+- Livros lendo: ${(c.books?.reading||[]).length}, finalizados: ${c.stats?.booksFinished||0}
+- Finanças: salário ${(c.finance?.salary||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}, disponível ${((c.finance?.salary||0)-(c.finance?.expenses||[]).reduce((a,e)=>a+e.amount,0)).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}
+
+Analise esses dados e responda de forma personalizada e útil. Seja específico, não genérico.`;
+  };
+
+  // ── AI MENTOR CHAT ──
+  const sendMentorMessage=async(userMsg)=>{
+    if(!userMsg.trim()||mentorLoading) return;
+    const newChat=[...mentorChat,{role:"user",content:userMsg}];
+    setMentorChat(newChat);
+    setMentorInput("");
+    setMentorLoading(true);
+    setTimeout(()=>mentorEndRef.current?.scrollIntoView({behavior:"smooth"}),100);
+    try{
+      const systemPrompt=buildMentorContext(char);
+      const messages=newChat.map(m=>({role:m.role,content:m.content}));
+      const res=await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          model:"claude-sonnet-4-20250514",
+          max_tokens:1000,
+          system:systemPrompt,
+          messages,
+        }),
+      });
+      const data=await res.json();
+      const reply=data.content?.map(b=>b.text||"").join("")||"Não consegui responder agora.";
+      setMentorChat(prev=>[...prev,{role:"assistant",content:reply}]);
+      setTimeout(()=>mentorEndRef.current?.scrollIntoView({behavior:"smooth"}),100);
+    } catch{
+      setMentorChat(prev=>[...prev,{role:"assistant",content:"Erro ao conectar com o mentor. Tente novamente."}]);
+    }
+    setMentorLoading(false);
+  };
+
+  const openMentor=async()=>{
+    setMentorOpen(true);
+    if(mentorChat.length===0){
+      // Auto greeting with analysis
+      await sendMentorMessage("Analise meu progresso atual e me dê seus 3 principais conselhos para esta semana.");
+    }
   };
 
   // ═══════════════════════════════════════════════════════════════
@@ -1072,6 +1192,81 @@ export default function App(){
         <div style={{fontFamily:"Cinzel,serif",fontSize:14,color:"#f0c040",fontWeight:700}}>{achPopup.name}</div>
         <div style={{fontSize:11,color:"#aaa",marginTop:2}}>{achPopup.desc}</div>
         <div style={{fontFamily:"Cinzel,serif",fontSize:11,color:"#f0c040",marginTop:4}}>+{achPopup.xp} XP</div>
+      </div>}
+
+      {/* ── MENTOR FLOATING BUTTON ── */}
+      {!mentorOpen&&<button onClick={openMentor} style={{position:"fixed",bottom:76,right:14,zIndex:200,width:52,height:52,borderRadius:"50%",background:"linear-gradient(135deg,#a78bfa,#7c3aed)",border:"2px solid #a78bfa77",boxShadow:"0 4px 20px #a78bfa55",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,cursor:"pointer",animation:"apulse 3s infinite"}}>
+        🧠
+      </button>}
+
+      {/* ── MENTOR CHAT PANEL ── */}
+      {mentorOpen&&<div style={{position:"fixed",inset:0,zIndex:250,display:"flex",flexDirection:"column",background:"#07070fee"}}>
+        {/* Header */}
+        <div style={{background:"linear-gradient(135deg,#1a0d2e,#0d0820)",borderBottom:"1px solid #a78bfa33",padding:"14px 16px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+          <div style={{width:40,height:40,borderRadius:"50%",background:"linear-gradient(135deg,#a78bfa,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🧠</div>
+          <div style={{flex:1}}>
+            <div style={{fontFamily:"Cinzel,serif",fontSize:13,color:"#a78bfa",fontWeight:700,letterSpacing:1}}>MENTOR IA</div>
+            <div style={{fontSize:10,color:"#555"}}>Análise personalizada do seu progresso</div>
+          </div>
+          <button onClick={()=>setMentorOpen(false)} style={{background:"none",border:"none",color:"#555",fontSize:22,cursor:"pointer",padding:"4px"}}>✕</button>
+        </div>
+
+        {/* Messages */}
+        <div style={{flex:1,overflowY:"auto",padding:"14px 14px 8px",display:"flex",flexDirection:"column",gap:12}}>
+          {mentorChat.length===0&&mentorLoading&&(
+            <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+              <div style={{width:32,height:32,borderRadius:"50%",background:"linear-gradient(135deg,#a78bfa,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>🧠</div>
+              <div style={{background:"#1a1535",border:"1px solid #a78bfa33",borderRadius:"4px 12px 12px 12px",padding:"10px 14px",maxWidth:"85%"}}>
+                <div style={{display:"flex",gap:5,alignItems:"center"}}>
+                  {[0,1,2].map(i=><div key={i} style={{width:7,height:7,borderRadius:"50%",background:"#a78bfa",animation:`blink 1.2s ${i*0.2}s infinite`}}/>)}
+                </div>
+              </div>
+            </div>
+          )}
+          {mentorChat.map((msg,i)=>(
+            <div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",flexDirection:msg.role==="user"?"row-reverse":"row"}}>
+              {msg.role==="assistant"&&<div style={{width:32,height:32,borderRadius:"50%",background:"linear-gradient(135deg,#a78bfa,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>🧠</div>}
+              <div style={{background:msg.role==="user"?"linear-gradient(135deg,#1a1535,#221c42)":"#1a1535",border:`1px solid ${msg.role==="user"?"#a78bfa44":"#a78bfa22"}`,borderRadius:msg.role==="user"?"12px 4px 12px 12px":"4px 12px 12px 12px",padding:"10px 14px",maxWidth:"85%",fontSize:13,color:"#e8dfc0",lineHeight:1.6,whiteSpace:"pre-wrap"}}>
+                {msg.content}
+              </div>
+            </div>
+          ))}
+          {mentorLoading&&mentorChat.length>0&&(
+            <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+              <div style={{width:32,height:32,borderRadius:"50%",background:"linear-gradient(135deg,#a78bfa,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>🧠</div>
+              <div style={{background:"#1a1535",border:"1px solid #a78bfa22",borderRadius:"4px 12px 12px 12px",padding:"10px 14px"}}>
+                <div style={{display:"flex",gap:5,alignItems:"center"}}>
+                  {[0,1,2].map(i=><div key={i} style={{width:7,height:7,borderRadius:"50%",background:"#a78bfa",animation:`blink 1.2s ${i*0.2}s infinite`}}/>)}
+                </div>
+              </div>
+            </div>
+          )}
+          <div ref={mentorEndRef}/>
+        </div>
+
+        {/* Quick suggestions */}
+        {mentorChat.length>0&&!mentorLoading&&<div style={{padding:"0 14px 8px",display:"flex",gap:6,overflowX:"auto"}}>
+          {["Como melhorar meu streak?","Qual matéria devo focar?","Análise financeira","Dicas de treino"].map(s=>(
+            <button key={s} onClick={()=>sendMentorMessage(s)} style={{background:"#1a1535",border:"1px solid #a78bfa33",borderRadius:20,padding:"6px 12px",color:"#a78bfa",fontFamily:"Cinzel,serif",fontSize:9,letterSpacing:1,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>
+              {s}
+            </button>
+          ))}
+        </div>}
+
+        {/* Input */}
+        <div style={{padding:"10px 14px 16px",borderTop:"1px solid #1a1838",display:"flex",gap:8,flexShrink:0,background:"#0d0820"}}>
+          <input
+            className="inp"
+            value={mentorInput}
+            onChange={e=>setMentorInput(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&sendMentorMessage(mentorInput)}
+            placeholder="Pergunte ao seu mentor..."
+            style={{flex:1,fontSize:13}}
+          />
+          <button onClick={()=>sendMentorMessage(mentorInput)} disabled={mentorLoading||!mentorInput.trim()} style={{width:42,height:42,borderRadius:10,background:mentorInput.trim()&&!mentorLoading?"linear-gradient(135deg,#a78bfa,#7c3aed)":"#1a1535",border:"none",color:"#fff",fontSize:18,cursor:mentorInput.trim()?"pointer":"not-allowed",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            {mentorLoading?"⏳":"➤"}
+          </button>
+        </div>
       </div>}
 
       {/* HEADER */}
@@ -1721,9 +1916,9 @@ export default function App(){
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginTop:12}}>
               <button className="tbtn" onClick={exportData} style={{padding:"11px",borderRadius:10,background:"#0a2010",border:"1px solid #22c55e44",color:"#22c55e",fontFamily:"Cinzel,serif",fontSize:10,letterSpacing:1}}>📤 EXPORTAR</button>
               <button className="tbtn" onClick={()=>importRef.current?.click()} style={{padding:"11px",borderRadius:10,background:"#0a1a0a",border:"1px solid #22c55e66",color:"#22c55e",fontFamily:"Cinzel,serif",fontSize:10,letterSpacing:1}}>📥 IMPORTAR</button>
-              <button className="tbtn" onClick={requestNotif} style={{padding:"11px",borderRadius:10,background:"#0a0a1e",border:"1px solid #60a5fa44",color:"#60a5fa",fontFamily:"Cinzel,serif",fontSize:10,letterSpacing:1,gridColumn:"1/-1"}}>🔔 ATIVAR NOTIFICAÇÕES</button>
+              <button className="tbtn" onClick={requestNotif} style={{padding:"11px",borderRadius:10,background:"#0a0a1e",border:"1px solid #60a5fa44",color:"#60a5fa",fontFamily:"Cinzel,serif",fontSize:10,letterSpacing:1,gridColumn:"1/-1"}}>🔔 ATIVAR NOTIFICAÇÕES INTELIGENTES</button>
             </div>
-            <div style={{marginTop:8,fontSize:9,color:"#333",fontFamily:"Cinzel,serif",textAlign:"center",letterSpacing:1}}>EXPORTAR = baixa backup · IMPORTAR = restaura backup</div>
+            <div style={{marginTop:8,fontSize:9,color:"#333",fontFamily:"Cinzel,serif",textAlign:"center",letterSpacing:1}}>Notificações: streak em risco, treino parado, boss semanal</div>
           </>}
 
           {lifeTab==="perfil"&&<>
