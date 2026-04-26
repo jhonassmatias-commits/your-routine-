@@ -1,7 +1,7 @@
 import './storage.js';
 import { useState, useEffect, useRef, useCallback } from "react";
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, doc, setDoc, getDoc, collection, query, where, getDocs, onSnapshot, updateDoc, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, setDoc, getDoc, collection, query, where, getDocs, onSnapshot, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 
 // ── FIREBASE ──
 const firebaseConfig = {
@@ -579,8 +579,8 @@ export default function App(){
       setChar(loaded);setQuests(q||{});setPens(p||{});
       const ac=loaded.concursos?.find(c2=>c2.id===loaded.activeConcurso);
       if(ac?.subjects?.length) setQSub(ac.subjects[0].id);
-      // Show onboarding if truly new user (no saved data)
-      if(!c) setFirstAccess(true);
+      // Show onboarding only if truly new (no saved data AND no username)
+      if(!c||!loaded.username) setFirstAccess(true);
       setLoading(false);
     })();
   },[]);
@@ -1025,10 +1025,26 @@ export default function App(){
   const finishOnboarding=async()=>{
     if(!onboardName.trim()||onboardModules.length===0) return;
     const fbUid=`usr_${uid()}`;
-    const nc={...char,username:onboardName.trim(),avatar:onboardAvatar,modules:onboardModules,firebaseUid:fbUid,friends:[],friendRequests:[]};
-    charRef.current=nc;setChar(nc);await save(nc,null,null);
-    // Save to Firebase
-    await fbSaveProfile(fbUid,{...nc,level:getLvl(nc.totalXP).cur.lv});
+    // Build fresh character — char may still be null at this point
+    const base=charRef.current||{...START};
+    const wid=weekId();
+    const wn=parseInt(wid.split("W")[1])||0;
+    const nc={
+      ...START,
+      ...base,
+      username:onboardName.trim(),
+      avatar:onboardAvatar,
+      modules:onboardModules,
+      firebaseUid:fbUid,
+      friends:[],
+      friendRequests:[],
+      boss:{weekId:wid,type:wn%BOSS_POOL.length,studyMin:0,trainCount:0,questions:0,runKm:0,claimed:false},
+    };
+    charRef.current=nc;
+    setChar(nc);
+    await save(nc,{},{});
+    // Try Firebase sync — non-blocking
+    fbSaveProfile(fbUid,{...nc,level:getLvl(nc.totalXP).cur.lv}).catch(()=>{});
     setFirstAccess(false);
     const g=onboardAvatar.gender==="f"?"Bem-vinda":"Bem-vindo";
     showToast(`${g}, ${onboardName.trim()}! ⚔️`,"#f0c040");
@@ -2285,15 +2301,28 @@ Analise esses dados e responda de forma personalizada e útil. Seja específico,
 
           {lifeTab==="financeiro"&&<>
             <Card glow="#22c55e33" style={{marginBottom:10}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                <div><Lbl mb={2}>SALÁRIO MENSAL</Lbl>{editingSalary?<div style={{display:"flex",gap:5,marginTop:5}}><input className="inp" value={salaryIn} onChange={e=>setSalaryIn(e.target.value)} type="number" placeholder="Valor" style={{width:130}}/><button className="tbtn" onClick={saveSalary} style={{background:"#22c55e22",border:"1px solid #22c55e55",color:"#22c55e",borderRadius:7,padding:"7px 11px",fontFamily:"Cinzel,serif",fontSize:9}}>OK</button><button className="tbtn" onClick={()=>setEditingSalary(false)} style={{color:"#555",background:"none",border:"1px solid #2a2848",borderRadius:7,padding:"7px 9px",fontSize:11}}>✕</button></div>:<button className="tbtn" onClick={()=>{setEditingSalary(true);setSalaryIn(String(salary));}} style={{background:"none",border:"none",padding:0,display:"flex",alignItems:"center",gap:6}}><span style={{fontFamily:"Cinzel,serif",fontSize:22,fontWeight:700,color:"#22c55e"}}>{curr(salary)}</span><span style={{fontSize:10,color:"#444"}}>✎</span></button>}</div>
-                <div style={{textAlign:"right"}}>
-                  <div style={{fontFamily:"Cinzel,serif",fontSize:15,color:availableNow>=0?"#22c55e":"#ef4444"}}>{curr(availableNow)}</div>
-                  <div style={{fontSize:9,color:"#555"}}>disponível agora</div>
+              <Lbl mb={6}>SALÁRIO MENSAL</Lbl>
+              <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:10}}>
+                <div style={{position:"relative",flex:1}}>
+                  <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"#22c55e",fontFamily:"Cinzel,serif",fontSize:13,pointerEvents:"none"}}>R$</span>
+                  <input
+                    className="inp"
+                    value={salaryIn||String(salary)}
+                    onChange={e=>setSalaryIn(e.target.value)}
+                    onFocus={e=>setSalaryIn(String(salary))}
+                    type="number"
+                    placeholder="Seu salário"
+                    style={{paddingLeft:36,fontSize:18,fontFamily:"Cinzel,serif",color:"#22c55e",fontWeight:700}}
+                  />
                 </div>
+                <button onClick={saveSalary} style={{padding:"10px 16px",borderRadius:9,background:"linear-gradient(135deg,#0a2010,#0d2a14)",border:"1px solid #22c55e55",color:"#22c55e",fontFamily:"Cinzel,serif",fontSize:10,cursor:"pointer",flexShrink:0,letterSpacing:1}}>✓ SALVAR</button>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                <span style={{fontSize:11,color:"#555"}}>Disponível agora</span>
+                <span style={{fontFamily:"Cinzel,serif",fontSize:15,color:availableNow>=0?"#22c55e":"#ef4444",fontWeight:700}}>{curr(availableNow)}</span>
               </div>
               <div style={{height:8,background:"#1a1838",borderRadius:4,overflow:"hidden",marginBottom:5}}>
-                <div style={{height:"100%",width:`${Math.min(100,(paidExp/salary)*100)}%`,background:"linear-gradient(90deg,#22c55e77,#22c55e)",borderRadius:4,transition:"width 0.5s"}}/>
+                <div style={{height:"100%",width:`${Math.min(100,(paidExp/Math.max(salary,1))*100)}%`,background:"linear-gradient(90deg,#22c55e77,#22c55e)",borderRadius:4,transition:"width 0.5s"}}/>
               </div>
               <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:"#555"}}>
                 <span>Pago: {curr(paidExp)} · A pagar: {curr(unpaidExp)}</span>
