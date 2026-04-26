@@ -1025,12 +1025,10 @@ export default function App(){
   const finishOnboarding=async()=>{
     if(!onboardName.trim()||onboardModules.length===0) return;
     const fbUid=`usr_${uid()}`;
-    // Build fresh character — char may still be null at this point
-    const base=charRef.current||{...START};
+    const base={...START};
     const wid=weekId();
     const wn=parseInt(wid.split("W")[1])||0;
     const nc={
-      ...START,
       ...base,
       username:onboardName.trim(),
       avatar:onboardAvatar,
@@ -1042,12 +1040,13 @@ export default function App(){
     };
     charRef.current=nc;
     setChar(nc);
-    await save(nc,{},{});
-    // Try Firebase sync — non-blocking
-    fbSaveProfile(fbUid,{...nc,level:getLvl(nc.totalXP).cur.lv}).catch(()=>{});
-    setFirstAccess(false);
+    await save(nc,null,null);
+    // Firebase sync non-blocking — don't await, don't crash if fails
+    try{ fbSaveProfile(fbUid,{...nc,level:getLvl(nc.totalXP).cur.lv}); }catch(_){}
     const g=onboardAvatar.gender==="f"?"Bem-vinda":"Bem-vindo";
     showToast(`${g}, ${onboardName.trim()}! ⚔️`,"#f0c040");
+    // Set firstAccess false LAST so char is already set
+    setFirstAccess(false);
   };
 
   // ── FIREBASE SYNC (save profile after any XP change) ──
@@ -1106,24 +1105,29 @@ export default function App(){
 
   // Load friend profiles on mount
   useEffect(()=>{
-    if(char?.friends?.length){
+    if(!char?.firebaseUid) return;
+    // Load friend profiles
+    if(char.friends?.length){
       char.friends.forEach(fid=>loadFriendProfile(fid));
     }
-    // Listen for friend requests in real time
-    if(char?.firebaseUid){
-      const unsub=onSnapshot(doc(db,"users",char.firebaseUid),(snap)=>{
-        if(snap.exists()){
-          const data=snap.data();
-          const newRequests=data.friendRequests||[];
-          if(newRequests.length>(char.friendRequests||[]).length){
-            showToast("📩 Novo pedido de amizade!","#a78bfa");
+    // Listen for friend requests in real time — wrapped in try/catch
+    let unsub=null;
+    try{
+      unsub=onSnapshot(doc(db,"users",char.firebaseUid),(snap)=>{
+        try{
+          if(snap.exists()){
+            const data=snap.data();
+            const newRequests=data.friendRequests||[];
+            if(newRequests.length>(charRef.current?.friendRequests||[]).length){
+              showToast("📩 Novo pedido de amizade!","#a78bfa");
+            }
+            const nc={...charRef.current,friendRequests:newRequests,friends:data.friends||charRef.current?.friends||[]};
+            charRef.current=nc;setChar(nc);save(nc,null,null);
           }
-          const nc={...charRef.current,friendRequests:newRequests,friends:data.friends||charRef.current?.friends||[]};
-          charRef.current=nc;setChar(nc);save(nc,null,null);
-        }
-      });
-      return()=>unsub();
-    }
+        }catch(_){}
+      },(err)=>{ console.warn("Firestore listener error:",err); });
+    }catch(e){ console.warn("Could not start Firestore listener:",e); }
+    return()=>{ try{ unsub&&unsub(); }catch(_){} };
   },[char?.firebaseUid]);
 
   // ── MODULE HELPERS ──
@@ -1308,6 +1312,15 @@ Analise esses dados e responda de forma personalizada e útil. Seja específico,
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Crimson+Text:wght@400;600&display=swap');`}</style>
       <div style={{fontSize:48}}>⚔️</div>
       <div style={{color:"#f0c040",fontFamily:"Cinzel,serif",fontSize:13,letterSpacing:4}}>YOUR ROUTINE</div>
+    </div>
+  );
+
+  // Safety guard — should never happen but prevents blank screen
+  if(!char) return(
+    <div style={{background:"#07070f",height:"100vh",width:"100vw",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:14}}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Crimson+Text:wght@400;600&display=swap');`}</style>
+      <div style={{fontSize:48}}>⚔️</div>
+      <div style={{color:"#f0c040",fontFamily:"Cinzel,serif",fontSize:13,letterSpacing:4}}>Carregando...</div>
     </div>
   );
 
