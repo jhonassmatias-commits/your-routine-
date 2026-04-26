@@ -1,4 +1,3 @@
-import './storage.js';
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // ── FIREBASE — lazy init, never crashes app ──
@@ -298,8 +297,15 @@ const bmiCat=(b)=>b<18.5?{l:"Abaixo do peso",c:"#60a5fa",t:"Aumente a ingestão 
 function getLvl(xp){let cur=LEVELS[0],nxt=LEVELS[1];for(let i=0;i<LEVELS.length;i++){if(xp>=LEVELS[i].xp){cur=LEVELS[i];nxt=LEVELS[i+1]||null;}}return {cur,nxt};}
 function getDynTitle(s,lv){return DYNAMIC_TITLES.find(t=>t.cond(s,lv))||DYNAMIC_TITLES[DYNAMIC_TITLES.length-1];}
 function streakMulti(s){return s>=30?1.25:s>=7?1.10:1;}
-async function sg(k){try{const r=await window.storage.get(k);return r?JSON.parse(r.value):null;}catch{return null;}}
-async function ss(k,v){try{await window.storage.set(k,JSON.stringify(v));}catch{}}
+async function sg(k){
+  try{
+    const v=localStorage.getItem('rpg_'+k);
+    return v?JSON.parse(v):null;
+  }catch{return null;}
+}
+async function ss(k,v){
+  try{ localStorage.setItem('rpg_'+k,JSON.stringify(v)); }catch{}
+}
 
 const parseTimeToMinutes=(str)=>{if(!str)return null;const [h,m]=str.split(":").map(Number);if(isNaN(h)||isNaN(m))return null;return h*60+m;};
 const minutesDiff=(startStr,endStr)=>{const s=parseTimeToMinutes(startStr),e=parseTimeToMinutes(endStr);if(s===null||e===null)return null;const diff=e>=s?e-s:e+1440-s;return diff;};
