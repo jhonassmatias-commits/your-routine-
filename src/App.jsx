@@ -189,7 +189,7 @@ const unlockDate=(m)=>{const d=new Date("2026-03-15");d.setMonth(d.getMonth()+m)
 const timeUnlocked=(m)=>new Date()>=unlockDate(m);
 const daysLeft=(d)=>Math.max(0,Math.ceil((d-new Date())/(864e5)));
 const bmiCat=(b)=>b<18.5?{l:"Abaixo do peso",c:"#60a5fa",t:"Aumente a ingestão calórica."}:b<25?{l:"Peso ideal ✓",c:"#22c55e",t:"Parabéns! Mantenha a rotina."}:b<30?{l:"Sobrepeso",c:"#f59e0b",t:"Combine cardio com controle alimentar."}:b<35?{l:"Obesidade I",c:"#f97316",t:"Consulte um profissional de saúde."}:{l:"Obesidade II+",c:"#ef4444",t:"Busque acompanhamento médico."};
-function getLvl(xp){let cur=LEVELS[0],nxt=LEVELS[1];for(let i=0;i<LEVELS.length;i++){if(xp>=LEVELS[i].xp&&timeUnlocked(LEVELS[i].months)){cur=LEVELS[i];nxt=LEVELS[i+1]||null;}}return {cur,nxt};}
+function getLvl(xp){let cur=LEVELS[0],nxt=LEVELS[1];for(let i=0;i<LEVELS.length;i++){if(xp>=LEVELS[i].xp){cur=LEVELS[i];nxt=LEVELS[i+1]||null;}}return {cur,nxt};}
 function getDynTitle(s,lv){return DYNAMIC_TITLES.find(t=>t.cond(s,lv))||DYNAMIC_TITLES[DYNAMIC_TITLES.length-1];}
 function streakMulti(s){return s>=30?1.25:s>=7?1.10:1;}
 async function sg(k){try{const r=await window.storage.get(k);return r?JSON.parse(r.value):null;}catch{return null;}}
