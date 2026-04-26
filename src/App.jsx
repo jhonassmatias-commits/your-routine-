@@ -319,6 +319,7 @@ export default function App(){
   const [mentorChat,setMentorChat]=useState([]);
   const [mentorInput,setMentorInput]=useState("");
   const mentorEndRef=useRef(null);
+  const mentorChatRef=useRef([]); // always up-to-date ref to avoid stale closure
 
   const [studyTab,setStudyTab]=useState("timer");
   const [bodyTab,setBodyTab]=useState("treino");
@@ -1009,15 +1010,17 @@ Analise esses dados e responda de forma personalizada e útil. Seja específico,
   // ── AI JARVIS CHAT ──
   const sendMentorMessage=async(userMsg)=>{
     if(!userMsg.trim()||mentorLoading) return;
-    const newChat=[...mentorChat,{role:"user",content:userMsg}];
+    // Use ref to always get latest chat history — avoids stale closure
+    const currentChat=mentorChatRef.current;
+    const newChat=[...currentChat,{role:"user",content:userMsg}];
+    mentorChatRef.current=newChat;
     setMentorChat(newChat);
     setMentorInput("");
     setMentorLoading(true);
     setTimeout(()=>mentorEndRef.current?.scrollIntoView({behavior:"smooth"}),100);
     try{
-      const systemPrompt=buildMentorContext(char);
+      const systemPrompt=buildMentorContext(charRef.current||char);
       const messages=newChat.map(m=>({role:m.role,content:m.content}));
-      // Use allorigins proxy to bypass CORS
       const apiUrl="https://api.anthropic.com/v1/messages";
       const proxyUrl=`https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}`;
       const res=await fetch(proxyUrl,{
@@ -1033,34 +1036,53 @@ Analise esses dados e responda de forma personalizada e útil. Seja específico,
       if(!res.ok) throw new Error(`HTTP ${res.status}`);
       const data=await res.json();
       const reply=data.content?.map(b=>b.text||"").join("")||"Não consegui responder agora.";
-      setMentorChat(prev=>[...prev,{role:"assistant",content:reply}]);
+      const updated=[...newChat,{role:"assistant",content:reply}];
+      mentorChatRef.current=updated;
+      setMentorChat(updated);
       setTimeout(()=>mentorEndRef.current?.scrollIntoView({behavior:"smooth"}),100);
     } catch(err){
-      // Fallback: generate local analysis without API
-      const c=char;
+      // Fallback local analysis
+      const c=charRef.current||char;
       const ac=c.concursos?.find(cc=>cc.id===c.activeConcurso)||c.concursos?.[0];
       const weakSubs=(ac?.subjects||[]).filter(s=>{const d=(ac.questions||{})[s.id];return d&&d.total>=10&&(d.correct/d.total)<0.80;});
       const lastWorkout=c.workoutLog?.[0];
       const daysSince=lastWorkout?Math.floor((new Date()-new Date(lastWorkout.date))/(864e5)):null;
       const streak=c.streak?.current||0;
-      let reply=`📊 **Análise do seu progresso, ${c.username||"Guerreiro"}:**\n\n`;
-      if(streak===0) reply+=`🔥 Seu streak está zerado. Complete Estudar + Treinar + Dormir bem hoje para começar uma sequência!\n\n`;
-      else if(streak<7) reply+=`🔥 Streak de ${streak} dias — ótimo começo! Foque em manter os 3 hábitos principais diariamente.\n\n`;
-      else reply+=`🔥 Impressionante! ${streak} dias de streak! Você está no modo ${streak>=30?"Monge":"Guerreiro"}. Continue!\n\n`;
-      if(weakSubs.length>0) reply+=`⚠️ **Matérias para focar:** ${weakSubs.map(s=>s.name).join(", ")} estão abaixo de 80%. Aumente a quantidade de questões nessas áreas.\n\n`;
-      if(daysSince!==null&&daysSince>=3) reply+=`💪 Faz ${daysSince} dias sem treinar. Seu corpo precisa de movimento — mesmo 20 minutos já fazem diferença.\n\n`;
-      reply+=`🎯 **Dica principal:** Consistência supera intensidade. Um pequeno avanço diário vale mais que uma maratona semanal.`;
-      setMentorChat(prev=>[...prev,{role:"assistant",content:reply}]);
+      const msg=userMsg.toLowerCase();
+      let reply="";
+      if(msg.includes("streak")||msg.includes("dias")){
+        reply=streak===0?`Seu streak está zerado. Para começar, complete as 3 missões principais hoje: Estudar, Treinar e Dormir bem. Cada dia consecutivo vale um multiplicador de XP!`:`Você está em ${streak} dias de streak! ${streak>=30?"Nível Monge — impressionante consistência!":streak>=7?"Ótima sequência, continue firme!":"Bom começo, construa o hábito!"} O multiplicador atual é ×${streakMulti(streak).toFixed(2)}.`;
+      } else if(msg.includes("matéria")||msg.includes("estudo")||msg.includes("foco")){
+        reply=weakSubs.length>0?`Foque em: ${weakSubs.map(s=>s.name).join(", ")}. Essas matérias estão abaixo de 80%. Tente resolver pelo menos 20 questões de cada por dia até subir o percentual.`:`Todas as matérias estão acima de 80% — excelente! Mantenha a cadência de questões diárias para não deixar cair.`;
+      } else if(msg.includes("treino")||msg.includes("exerc")){
+        reply=daysSince!==null&&daysSince>=3?`Faz ${daysSince} dias sem treinar. Que tal começar com um treino leve hoje? Consistência é mais importante que intensidade.`:`Seus treinos estão em dia! Você já realizou ${c.stats?.totalWorkouts||0} treinos no total. Continue mantendo a frequência.`;
+      } else if(msg.includes("financ")||msg.includes("dinheiro")){
+        const sal=c.finance?.salary||0;
+        const tot=(c.finance?.expenses||[]).reduce((a,e)=>a+e.amount,0);
+        const livre=sal-tot;
+        reply=`Salário: R$ ${sal.toFixed(2)} · Comprometido: R$ ${tot.toFixed(2)} · Livre: R$ ${livre.toFixed(2)}. ${livre<0?"Atenção: seus gastos superam o salário! Revise as despesas.":livre<sal*0.2?"Reserve mais: o ideal é ter ao menos 20% do salário livre.":"Boa saúde financeira! Considere investir parte do valor livre."}`;
+      } else {
+        // Generic motivational analysis
+        let r=`📊 **${c.username||"Guerreiro"}**, aqui está sua análise:\n\n`;
+        r+=`🔥 Streak: ${streak} dias${streak>=7?" — você está em chamas!":""}\n`;
+        r+=`📚 ${c.stats?.totalStudyHours||0}h de estudo registradas\n`;
+        r+=`💪 ${c.stats?.totalWorkouts||0} treinos completados\n`;
+        if(weakSubs.length>0) r+=`⚠️ Foque em: ${weakSubs.map(s=>s.name).join(", ")}\n`;
+        r+=`\n🎯 Dica: ${streak===0?"Comece hoje — o primeiro passo é o mais importante.":streak<7?"Cada dia conta. Mantenha os hábitos principais.":"Você está construindo algo real. Continue!"}`;
+        reply=r;
+      }
+      const updated=[...newChat,{role:"assistant",content:reply}];
+      mentorChatRef.current=updated;
+      setMentorChat(updated);
       setTimeout(()=>mentorEndRef.current?.scrollIntoView({behavior:"smooth"}),100);
     }
     setMentorLoading(false);
   };
 
-  const openMentor=async()=>{
+  const openMentor=()=>{
     setMentorOpen(true);
-    if(mentorChat.length===0){
-      // Auto greeting with analysis
-      await sendMentorMessage("Analise meu progresso atual e me dê seus 3 principais conselhos para esta semana.");
+    if(mentorChatRef.current.length===0){
+      sendMentorMessage("Analise meu progresso atual e me dê seus 3 principais conselhos para esta semana.");
     }
   };
 
