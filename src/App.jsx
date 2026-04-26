@@ -520,15 +520,24 @@ export default function App(){
     }
   };
 
-  // ── STREAK FIX: use local date strings, not ISO ──
+  // ── STREAK: robusto com data local ──
   const updateStreak=(c,newQ)=>{
     const cores=QUESTS.filter(q=>q.core).map(q=>q.id);
-    if(!cores.every(id=>newQ[id])) return c.streak;
-    const td=todayStr(),yd=yesterdayStr();
+    const allCoreDone=cores.every(id=>newQ[id]);
+    if(!allCoreDone) return c.streak;
+    const td=todayStr();
+    const yd=yesterdayStr();
     const s={...c.streak};
-    if(s.lastDate===td) return s; // already counted today
-    s.current = s.lastDate===yd ? s.current+1 : 1; // consecutive or reset
-    s.best=Math.max(s.best,s.current);
+    // Já contou hoje
+    if(s.lastDate===td) return s;
+    // Ontem foi o último dia → incrementa
+    if(s.lastDate===yd){
+      s.current=s.current+1;
+    } else {
+      // Mais de 1 dia sem completar → reinicia
+      s.current=1;
+    }
+    s.best=Math.max(s.best||0,s.current);
     s.lastDate=td;
     return s;
   };
@@ -997,7 +1006,7 @@ DADOS DO USUÁRIO (${c.username||"Jogador"}):
 Analise esses dados e responda de forma personalizada e útil. Seja específico, não genérico.`;
   };
 
-  // ── AI MENTOR CHAT ──
+  // ── AI JARVIS CHAT ──
   const sendMentorMessage=async(userMsg)=>{
     if(!userMsg.trim()||mentorLoading) return;
     const newChat=[...mentorChat,{role:"user",content:userMsg}];
@@ -1008,22 +1017,41 @@ Analise esses dados e responda de forma personalizada e útil. Seja específico,
     try{
       const systemPrompt=buildMentorContext(char);
       const messages=newChat.map(m=>({role:m.role,content:m.content}));
-      const res=await fetch("https://api.anthropic.com/v1/messages",{
+      // Use allorigins proxy to bypass CORS
+      const apiUrl="https://api.anthropic.com/v1/messages";
+      const proxyUrl=`https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}`;
+      const res=await fetch(proxyUrl,{
         method:"POST",
-        headers:{"Content-Type":"application/json"},
+        headers:{"Content-Type":"application/json","anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
         body:JSON.stringify({
           model:"claude-sonnet-4-20250514",
-          max_tokens:1000,
+          max_tokens:800,
           system:systemPrompt,
           messages,
         }),
       });
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
       const data=await res.json();
       const reply=data.content?.map(b=>b.text||"").join("")||"Não consegui responder agora.";
       setMentorChat(prev=>[...prev,{role:"assistant",content:reply}]);
       setTimeout(()=>mentorEndRef.current?.scrollIntoView({behavior:"smooth"}),100);
-    } catch{
-      setMentorChat(prev=>[...prev,{role:"assistant",content:"Erro ao conectar com o mentor. Tente novamente."}]);
+    } catch(err){
+      // Fallback: generate local analysis without API
+      const c=char;
+      const ac=c.concursos?.find(cc=>cc.id===c.activeConcurso)||c.concursos?.[0];
+      const weakSubs=(ac?.subjects||[]).filter(s=>{const d=(ac.questions||{})[s.id];return d&&d.total>=10&&(d.correct/d.total)<0.80;});
+      const lastWorkout=c.workoutLog?.[0];
+      const daysSince=lastWorkout?Math.floor((new Date()-new Date(lastWorkout.date))/(864e5)):null;
+      const streak=c.streak?.current||0;
+      let reply=`📊 **Análise do seu progresso, ${c.username||"Guerreiro"}:**\n\n`;
+      if(streak===0) reply+=`🔥 Seu streak está zerado. Complete Estudar + Treinar + Dormir bem hoje para começar uma sequência!\n\n`;
+      else if(streak<7) reply+=`🔥 Streak de ${streak} dias — ótimo começo! Foque em manter os 3 hábitos principais diariamente.\n\n`;
+      else reply+=`🔥 Impressionante! ${streak} dias de streak! Você está no modo ${streak>=30?"Monge":"Guerreiro"}. Continue!\n\n`;
+      if(weakSubs.length>0) reply+=`⚠️ **Matérias para focar:** ${weakSubs.map(s=>s.name).join(", ")} estão abaixo de 80%. Aumente a quantidade de questões nessas áreas.\n\n`;
+      if(daysSince!==null&&daysSince>=3) reply+=`💪 Faz ${daysSince} dias sem treinar. Seu corpo precisa de movimento — mesmo 20 minutos já fazem diferença.\n\n`;
+      reply+=`🎯 **Dica principal:** Consistência supera intensidade. Um pequeno avanço diário vale mais que uma maratona semanal.`;
+      setMentorChat(prev=>[...prev,{role:"assistant",content:reply}]);
+      setTimeout(()=>mentorEndRef.current?.scrollIntoView({behavior:"smooth"}),100);
     }
     setMentorLoading(false);
   };
@@ -1122,7 +1150,9 @@ Analise esses dados e responda de forma personalizada e útil. Seja específico,
   const expenses=char.finance?.expenses||[];
   const totalExp=expenses.reduce((a,e)=>a+e.amount,0);
   const paidExp=expenses.filter(e=>e.paid).reduce((a,e)=>a+e.amount,0);
-  const remaining=salary-totalExp;
+  const unpaidExp=expenses.filter(e=>!e.paid).reduce((a,e)=>a+e.amount,0);
+  const remaining=salary-totalExp; // total comprometido
+  const availableNow=salary-paidExp; // disponível agora (descontando só o que já pagou)
   const weight=parseFloat(char.body?.weight||0);
   const height=parseFloat(char.body?.height||0)/100;
   const bmi=weight&&height?+(weight/(height*height)).toFixed(1):null;
@@ -1194,19 +1224,19 @@ Analise esses dados e responda de forma personalizada e útil. Seja específico,
         <div style={{fontFamily:"Cinzel,serif",fontSize:11,color:"#f0c040",marginTop:4}}>+{achPopup.xp} XP</div>
       </div>}
 
-      {/* ── MENTOR FLOATING BUTTON ── */}
-      {!mentorOpen&&<button onClick={openMentor} style={{position:"fixed",bottom:76,right:14,zIndex:200,width:52,height:52,borderRadius:"50%",background:"linear-gradient(135deg,#a78bfa,#7c3aed)",border:"2px solid #a78bfa77",boxShadow:"0 4px 20px #a78bfa55",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,cursor:"pointer",animation:"apulse 3s infinite"}}>
-        🧠
+      {/* ── J.A.R.V.I.S FLOATING BUTTON ── */}
+      {!mentorOpen&&<button onClick={openMentor} style={{position:"fixed",bottom:76,right:14,zIndex:200,width:52,height:52,borderRadius:"50%",background:"linear-gradient(135deg,#a78bfa,#7c3aed)",border:"2px solid #a78bfa77",boxShadow:"0 4px 20px #a78bfa55",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,cursor:"pointer",animation:"apulse 3s infinite",fontFamily:"Cinzel,serif",color:"#fff",fontWeight:900,letterSpacing:0}}>
+        J
       </button>}
 
-      {/* ── MENTOR CHAT PANEL ── */}
+      {/* ── J.A.R.V.I.S CHAT PANEL ── */}
       {mentorOpen&&<div style={{position:"fixed",inset:0,zIndex:250,display:"flex",flexDirection:"column",background:"#07070fee"}}>
         {/* Header */}
         <div style={{background:"linear-gradient(135deg,#1a0d2e,#0d0820)",borderBottom:"1px solid #a78bfa33",padding:"14px 16px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
-          <div style={{width:40,height:40,borderRadius:"50%",background:"linear-gradient(135deg,#a78bfa,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🧠</div>
+          <div style={{width:40,height:40,borderRadius:"50%",background:"linear-gradient(135deg,#a78bfa,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0,fontFamily:"Cinzel,serif",color:"#fff",fontWeight:900,letterSpacing:1}}>J</div>
           <div style={{flex:1}}>
-            <div style={{fontFamily:"Cinzel,serif",fontSize:13,color:"#a78bfa",fontWeight:700,letterSpacing:1}}>MENTOR IA</div>
-            <div style={{fontSize:10,color:"#555"}}>Análise personalizada do seu progresso</div>
+            <div style={{fontFamily:"Cinzel,serif",fontSize:13,color:"#a78bfa",fontWeight:700,letterSpacing:2}}>J.A.R.V.I.S</div>
+            <div style={{fontSize:10,color:"#555"}}>Seu assistente de produtividade pessoal</div>
           </div>
           <button onClick={()=>setMentorOpen(false)} style={{background:"none",border:"none",color:"#555",fontSize:22,cursor:"pointer",padding:"4px"}}>✕</button>
         </div>
@@ -1215,7 +1245,7 @@ Analise esses dados e responda de forma personalizada e útil. Seja específico,
         <div style={{flex:1,overflowY:"auto",padding:"14px 14px 8px",display:"flex",flexDirection:"column",gap:12}}>
           {mentorChat.length===0&&mentorLoading&&(
             <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
-              <div style={{width:32,height:32,borderRadius:"50%",background:"linear-gradient(135deg,#a78bfa,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>🧠</div>
+              <div style={{width:32,height:32,borderRadius:"50%",background:"linear-gradient(135deg,#a78bfa,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0,fontFamily:"Cinzel,serif",color:"#fff",fontWeight:900}}>J</div>
               <div style={{background:"#1a1535",border:"1px solid #a78bfa33",borderRadius:"4px 12px 12px 12px",padding:"10px 14px",maxWidth:"85%"}}>
                 <div style={{display:"flex",gap:5,alignItems:"center"}}>
                   {[0,1,2].map(i=><div key={i} style={{width:7,height:7,borderRadius:"50%",background:"#a78bfa",animation:`blink 1.2s ${i*0.2}s infinite`}}/>)}
@@ -1225,7 +1255,7 @@ Analise esses dados e responda de forma personalizada e útil. Seja específico,
           )}
           {mentorChat.map((msg,i)=>(
             <div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",flexDirection:msg.role==="user"?"row-reverse":"row"}}>
-              {msg.role==="assistant"&&<div style={{width:32,height:32,borderRadius:"50%",background:"linear-gradient(135deg,#a78bfa,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>🧠</div>}
+              {msg.role==="assistant"&&<div style={{width:32,height:32,borderRadius:"50%",background:"linear-gradient(135deg,#a78bfa,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0,fontFamily:"Cinzel,serif",color:"#fff",fontWeight:900}}>J</div>}
               <div style={{background:msg.role==="user"?"linear-gradient(135deg,#1a1535,#221c42)":"#1a1535",border:`1px solid ${msg.role==="user"?"#a78bfa44":"#a78bfa22"}`,borderRadius:msg.role==="user"?"12px 4px 12px 12px":"4px 12px 12px 12px",padding:"10px 14px",maxWidth:"85%",fontSize:13,color:"#e8dfc0",lineHeight:1.6,whiteSpace:"pre-wrap"}}>
                 {msg.content}
               </div>
@@ -1233,7 +1263,7 @@ Analise esses dados e responda de forma personalizada e útil. Seja específico,
           ))}
           {mentorLoading&&mentorChat.length>0&&(
             <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
-              <div style={{width:32,height:32,borderRadius:"50%",background:"linear-gradient(135deg,#a78bfa,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>🧠</div>
+              <div style={{width:32,height:32,borderRadius:"50%",background:"linear-gradient(135deg,#a78bfa,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0,fontFamily:"Cinzel,serif",color:"#fff",fontWeight:900}}>J</div>
               <div style={{background:"#1a1535",border:"1px solid #a78bfa22",borderRadius:"4px 12px 12px 12px",padding:"10px 14px"}}>
                 <div style={{display:"flex",gap:5,alignItems:"center"}}>
                   {[0,1,2].map(i=><div key={i} style={{width:7,height:7,borderRadius:"50%",background:"#a78bfa",animation:`blink 1.2s ${i*0.2}s infinite`}}/>)}
@@ -1838,7 +1868,22 @@ Analise esses dados e responda de forma personalizada e útil. Seja específico,
           <STabs tabs={[{id:"financeiro",i:"💰",l:"Finanças",c:"#22c55e"},{id:"conquistas",i:"🏆",l:"Conquistas",c:"#f0c040"},{id:"stats",i:"📊",l:"Stats",c:"#60a5fa"},{id:"perfil",i:"👤",l:"Perfil",c:"#a78bfa"}]} val={lifeTab} onChange={setLifeTab}/>
 
           {lifeTab==="financeiro"&&<>
-            <Card glow="#22c55e33" style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><div><Lbl mb={2}>SALÁRIO MENSAL</Lbl>{editingSalary?<div style={{display:"flex",gap:5,marginTop:5}}><input className="inp" value={salaryIn} onChange={e=>setSalaryIn(e.target.value)} type="number" placeholder="Valor" style={{width:130}}/><button className="tbtn" onClick={saveSalary} style={{background:"#22c55e22",border:"1px solid #22c55e55",color:"#22c55e",borderRadius:7,padding:"7px 11px",fontFamily:"Cinzel,serif",fontSize:9}}>OK</button><button className="tbtn" onClick={()=>setEditingSalary(false)} style={{color:"#555",background:"none",border:"1px solid #2a2848",borderRadius:7,padding:"7px 9px",fontSize:11}}>✕</button></div>:<button className="tbtn" onClick={()=>{setEditingSalary(true);setSalaryIn(String(salary));}} style={{background:"none",border:"none",padding:0,display:"flex",alignItems:"center",gap:6}}><span style={{fontFamily:"Cinzel,serif",fontSize:22,fontWeight:700,color:"#22c55e"}}>{curr(salary)}</span><span style={{fontSize:10,color:"#444"}}>✎</span></button>}</div><div style={{textAlign:"right"}}><div style={{fontFamily:"Cinzel,serif",fontSize:15,color:remaining>=0?"#22c55e":"#ef4444"}}>{curr(remaining)}</div><div style={{fontSize:9,color:"#555"}}>disponível</div></div></div><div style={{height:8,background:"#1a1838",borderRadius:4,overflow:"hidden",marginBottom:5}}><div style={{height:"100%",width:`${Math.min(100,(totalExp/salary)*100)}%`,background:`linear-gradient(90deg,${remaining>=0?"#22c55e":"#ef4444"}88,${remaining>=0?"#22c55e":"#ef4444"})`,borderRadius:4,transition:"width 0.5s"}}/></div><div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:"#555"}}><span>Comprometido: {curr(totalExp)}</span><span>{Math.round((totalExp/salary)*100)}% do salário</span></div></Card>
+            <Card glow="#22c55e33" style={{marginBottom:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <div><Lbl mb={2}>SALÁRIO MENSAL</Lbl>{editingSalary?<div style={{display:"flex",gap:5,marginTop:5}}><input className="inp" value={salaryIn} onChange={e=>setSalaryIn(e.target.value)} type="number" placeholder="Valor" style={{width:130}}/><button className="tbtn" onClick={saveSalary} style={{background:"#22c55e22",border:"1px solid #22c55e55",color:"#22c55e",borderRadius:7,padding:"7px 11px",fontFamily:"Cinzel,serif",fontSize:9}}>OK</button><button className="tbtn" onClick={()=>setEditingSalary(false)} style={{color:"#555",background:"none",border:"1px solid #2a2848",borderRadius:7,padding:"7px 9px",fontSize:11}}>✕</button></div>:<button className="tbtn" onClick={()=>{setEditingSalary(true);setSalaryIn(String(salary));}} style={{background:"none",border:"none",padding:0,display:"flex",alignItems:"center",gap:6}}><span style={{fontFamily:"Cinzel,serif",fontSize:22,fontWeight:700,color:"#22c55e"}}>{curr(salary)}</span><span style={{fontSize:10,color:"#444"}}>✎</span></button>}</div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontFamily:"Cinzel,serif",fontSize:15,color:availableNow>=0?"#22c55e":"#ef4444"}}>{curr(availableNow)}</div>
+                  <div style={{fontSize:9,color:"#555"}}>disponível agora</div>
+                </div>
+              </div>
+              <div style={{height:8,background:"#1a1838",borderRadius:4,overflow:"hidden",marginBottom:5}}>
+                <div style={{height:"100%",width:`${Math.min(100,(paidExp/salary)*100)}%`,background:"linear-gradient(90deg,#22c55e77,#22c55e)",borderRadius:4,transition:"width 0.5s"}}/>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:"#555"}}>
+                <span>Pago: {curr(paidExp)} · A pagar: {curr(unpaidExp)}</span>
+                <span>Total: {curr(totalExp)}</span>
+              </div>
+            </Card>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><Lbl mb={0}>GASTOS E CONTAS</Lbl><button className="tbtn" onClick={()=>setAddingExp(v=>!v)} style={{background:"#0a2010",border:"1px solid #22c55e44",color:"#22c55e",borderRadius:7,padding:"4px 10px",fontFamily:"Cinzel,serif",fontSize:8}}>+ ADICIONAR</button></div>
             {addingExp&&<Card style={{marginBottom:10}}><Lbl>NOVO GASTO</Lbl><div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:7}}>{["🍽️","📱","🌐","💳","🏠","🎮","💊","📚","✈️","🎵","⛽","💄"].map(ic=><button key={ic} className="tbtn" onClick={()=>setNewExpIcon(ic)} style={{fontSize:17,opacity:newExpIcon===ic?1:0.3}}>{ic}</button>)}</div><input className="inp" value={newExpName} onChange={e=>setNewExpName(e.target.value)} placeholder="Nome do gasto" style={{marginBottom:5}}/><input className="inp" value={newExpAmt} onChange={e=>setNewExpAmt(e.target.value)} type="number" placeholder="Valor (R$)" style={{marginBottom:5}}/><div style={{display:"flex",gap:5,marginBottom:9}}><input className="inp" value={newExpInst} onChange={e=>setNewExpInst(e.target.value)} type="number" placeholder="Parcela atual" style={{flex:1}}/><input className="inp" value={newExpTotal} onChange={e=>setNewExpTotal(e.target.value)} type="number" placeholder="Total parcelas" style={{flex:1}}/></div><div style={{display:"flex",gap:5}}><button className="tbtn" onClick={()=>setAddingExp(false)} style={{flex:1,padding:"9px",borderRadius:8,border:"1px solid #2a2848",color:"#666",fontFamily:"Cinzel,serif",fontSize:9}}>CANCELAR</button><button className="tbtn" onClick={addExpense} style={{flex:2,padding:"9px",borderRadius:8,background:"linear-gradient(135deg,#0a2010,#0d2a14)",border:"1px solid #22c55e55",color:"#22c55e",fontFamily:"Cinzel,serif",fontSize:10}}>✓ ADICIONAR</button></div></Card>}
             {expenses.map(exp=><div key={exp.id} style={{background:exp.paid?"linear-gradient(135deg,#0a2010,#0d2a14)":"#0f0f1e",border:`1px solid ${exp.paid?"#22c55e44":"#1a1838"}`,borderRadius:11,padding:"11px 12px",marginBottom:6}}><div style={{display:"flex",alignItems:"center",gap:9}}><button className="tbtn" onClick={()=>togglePaid(exp.id)} style={{width:22,height:22,borderRadius:5,border:`2px solid ${exp.paid?"#22c55e":"#2a2848"}`,background:exp.paid?"#22c55e33":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{exp.paid&&<span style={{color:"#22c55e",fontSize:11,fontWeight:900}}>✓</span>}</button><span style={{fontSize:18}}>{exp.icon}</span><div style={{flex:1}}><div style={{fontSize:13,color:exp.paid?"#aaa":"#e8dfc0",textDecoration:exp.paid?"line-through":"none"}}>{exp.name}</div><div style={{display:"flex",alignItems:"center",gap:8,marginTop:1}}>{exp.installments&&<div style={{fontSize:10,color:"#a78bfa"}}>📋 {exp.installments.current}/{exp.installments.total}x{exp.installments.current<exp.installments.total&&<button className="tbtn" onClick={()=>advanceInstallment(exp.id)} style={{marginLeft:4,fontSize:9,color:"#a78bfa",border:"1px solid #a78bfa44",borderRadius:4,padding:"1px 5px",fontFamily:"Cinzel,serif"}}>+1</button>}</div>}<span style={{fontSize:10,color:"#555"}}>+{FIN_XP(exp.amount)} XP</span></div></div><div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}><span style={{fontFamily:"Cinzel,serif",fontSize:13,color:exp.paid?"#22c55e":"#e8dfc0"}}>{curr(exp.amount)}</span><button className="tbtn" onClick={()=>removeExpense(exp.id)} style={{color:"#333",fontSize:11}}>✕</button></div></div></div>)}
