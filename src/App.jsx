@@ -1,23 +1,41 @@
 import './storage.js';
 import { useState, useEffect, useRef, useCallback } from "react";
-import { initializeApp } from "firebase/app";
-import { getFirestore, doc, setDoc, getDoc, collection, query, where, getDocs, onSnapshot, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 
-// ── FIREBASE ──
-const firebaseConfig = {
-  apiKey: "AIzaSyAlfcY2UZTCeGh3_nmzROmhXYqmhTpjbWo",
-  authDomain: "your-routine-a7118.firebaseapp.com",
-  projectId: "your-routine-a7118",
-  storageBucket: "your-routine-a7118.firebasestorage.app",
-  messagingSenderId: "708442867968",
-  appId: "1:708442867968:web:dd50f73f862417615e0be5"
+// ── FIREBASE — lazy init, never crashes app ──
+let db = null;
+let fbFunctions = {};
+
+const initFirebase = async () => {
+  try {
+    const { initializeApp } = await import("firebase/app");
+    const { getFirestore, doc, setDoc, getDoc, collection, query, where, getDocs, onSnapshot, updateDoc, arrayUnion, arrayRemove } = await import("firebase/firestore");
+    const firebaseConfig = {
+      apiKey: "AIzaSyAlfcY2UZTCeGh3_nmzROmhXYqmhTpjbWo",
+      authDomain: "your-routine-a7118.firebaseapp.com",
+      projectId: "your-routine-a7118",
+      storageBucket: "your-routine-a7118.firebasestorage.app",
+      messagingSenderId: "708442867968",
+      appId: "1:708442867968:web:dd50f73f862417615e0be5"
+    };
+    const fbApp = initializeApp(firebaseConfig);
+    db = getFirestore(fbApp);
+    fbFunctions = { doc, setDoc, getDoc, collection, query, where, getDocs, onSnapshot, updateDoc, arrayUnion, arrayRemove };
+    return true;
+  } catch(e) {
+    console.warn("Firebase não disponível:", e);
+    return false;
+  }
 };
-const fbApp = initializeApp(firebaseConfig);
-const db = getFirestore(fbApp);
 
-// Firebase helpers
+// Initialize Firebase in background — app works without it
+initFirebase();
+
+
+// Firebase helpers — all gracefully fail if Firebase not ready
 const fbSaveProfile = async (uid, data) => {
   try {
+    if(!db||!fbFunctions.doc) return;
+    const {doc,setDoc} = fbFunctions;
     await setDoc(doc(db, "users", uid), {
       uid, username: data.username, totalXP: data.totalXP,
       level: data.level||1, streak: data.streak?.current||0,
@@ -28,11 +46,16 @@ const fbSaveProfile = async (uid, data) => {
   } catch(e){ console.warn("FB save error",e); }
 };
 const fbGetProfile = async (uid) => {
-  try { const d=await getDoc(doc(db,"users",uid)); return d.exists()?d.data():null; }
-  catch(e){ return null; }
+  try {
+    if(!db||!fbFunctions.doc) return null;
+    const {doc,getDoc} = fbFunctions;
+    const d=await getDoc(doc(db,"users",uid)); return d.exists()?d.data():null;
+  } catch(e){ return null; }
 };
 const fbSearchUser = async (username) => {
   try {
+    if(!db||!fbFunctions.collection) return null;
+    const {collection,query,where,getDocs} = fbFunctions;
     const q=query(collection(db,"users"),where("username","==",username));
     const snap=await getDocs(q);
     if(snap.empty) return null;
@@ -40,22 +63,32 @@ const fbSearchUser = async (username) => {
   } catch(e){ return null; }
 };
 const fbSendFriendRequest = async (fromUid, toUid) => {
-  try { await updateDoc(doc(db,"users",toUid),{friendRequests:arrayUnion(fromUid)}); return true; }
-  catch(e){ return false; }
+  try {
+    if(!db||!fbFunctions.doc) return false;
+    const {doc,updateDoc,arrayUnion} = fbFunctions;
+    await updateDoc(doc(db,"users",toUid),{friendRequests:arrayUnion(fromUid)}); return true;
+  } catch(e){ return false; }
 };
 const fbAcceptFriend = async (myUid, friendUid) => {
   try {
+    if(!db||!fbFunctions.doc) return false;
+    const {doc,updateDoc,arrayUnion,arrayRemove} = fbFunctions;
     await updateDoc(doc(db,"users",myUid),{friends:arrayUnion(friendUid),friendRequests:arrayRemove(friendUid)});
     await updateDoc(doc(db,"users",friendUid),{friends:arrayUnion(myUid)});
     return true;
   } catch(e){ return false; }
 };
 const fbDeclineFriend = async (myUid, friendUid) => {
-  try { await updateDoc(doc(db,"users",myUid),{friendRequests:arrayRemove(friendUid)}); return true; }
-  catch(e){ return false; }
+  try {
+    if(!db||!fbFunctions.doc) return false;
+    const {doc,updateDoc,arrayRemove} = fbFunctions;
+    await updateDoc(doc(db,"users",myUid),{friendRequests:arrayRemove(friendUid)}); return true;
+  } catch(e){ return false; }
 };
 const fbRemoveFriend = async (myUid, friendUid) => {
   try {
+    if(!db||!fbFunctions.doc) return false;
+    const {doc,updateDoc,arrayRemove} = fbFunctions;
     await updateDoc(doc(db,"users",myUid),{friends:arrayRemove(friendUid)});
     await updateDoc(doc(db,"users",friendUid),{friends:arrayRemove(myUid)});
     return true;
@@ -1106,28 +1139,32 @@ export default function App(){
   // Load friend profiles on mount
   useEffect(()=>{
     if(!char?.firebaseUid) return;
-    // Load friend profiles
     if(char.friends?.length){
       char.friends.forEach(fid=>loadFriendProfile(fid));
     }
-    // Listen for friend requests in real time — wrapped in try/catch
     let unsub=null;
-    try{
-      unsub=onSnapshot(doc(db,"users",char.firebaseUid),(snap)=>{
-        try{
-          if(snap.exists()){
-            const data=snap.data();
-            const newRequests=data.friendRequests||[];
-            if(newRequests.length>(charRef.current?.friendRequests||[]).length){
-              showToast("📩 Novo pedido de amizade!","#a78bfa");
+    const startListener=()=>{
+      try{
+        if(!db||!fbFunctions.doc||!fbFunctions.onSnapshot) return;
+        const {doc,onSnapshot} = fbFunctions;
+        unsub=onSnapshot(doc(db,"users",char.firebaseUid),(snap)=>{
+          try{
+            if(snap.exists()){
+              const data=snap.data();
+              const newRequests=data.friendRequests||[];
+              if(newRequests.length>(charRef.current?.friendRequests||[]).length){
+                showToast("📩 Novo pedido de amizade!","#a78bfa");
+              }
+              const nc={...charRef.current,friendRequests:newRequests,friends:data.friends||charRef.current?.friends||[]};
+              charRef.current=nc;setChar(nc);save(nc,null,null);
             }
-            const nc={...charRef.current,friendRequests:newRequests,friends:data.friends||charRef.current?.friends||[]};
-            charRef.current=nc;setChar(nc);save(nc,null,null);
-          }
-        }catch(_){}
-      },(err)=>{ console.warn("Firestore listener error:",err); });
-    }catch(e){ console.warn("Could not start Firestore listener:",e); }
-    return()=>{ try{ unsub&&unsub(); }catch(_){} };
+          }catch(_){}
+        },(err)=>{ console.warn("Firestore listener error:",err); });
+      }catch(e){ console.warn("Could not start Firestore listener:",e); }
+    };
+    // Wait a bit for Firebase to init before starting listener
+    const t=setTimeout(startListener, 2000);
+    return()=>{ clearTimeout(t); try{ unsub&&unsub(); }catch(_){} };
   },[char?.firebaseUid]);
 
   // ── MODULE HELPERS ──
