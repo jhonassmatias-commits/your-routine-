@@ -275,6 +275,29 @@ const SUBJECT_ICONS=["📝","🧩","📊","🏦","📰","💻","🌎","✍️","
 const SUBJECT_COLORS=["#60a5fa","#a78bfa","#34d399","#f59e0b","#f97316","#22d3ee","#ec4899","#84cc16","#ef4444","#f0c040","#4ecdc4","#fb923c"];
 const HABIT_ICONS=["💧","🧘","🥗","😴","📵","🚶","🎸","✍️","🌅","🛁","💊","🙏","📓","🎯","🧹","🌿"];
 const HABIT_COLORS=["#60a5fa","#34d399","#f59e0b","#a78bfa","#f97316","#22d3ee","#ec4899","#84cc16","#ef4444","#f0c040"];
+// ── CRONOGRAMA ──
+const CRON_WEEK = [
+  { dow:0, tipo:"rest",   icon:"💤", materia:"Descanso",                            sub:"Revisão rápida opcional (20 min)"              },
+  { dow:1, tipo:"shared", icon:"📝", materia:"Língua Portuguesa",                    sub:"Interpretação · gramática · coesão · redação"  },
+  { dow:2, tipo:"shared", icon:"🧩", materia:"Matemática + Raciocínio Lógico",        sub:"Mat. Financeira → aritmética · Lógica (Bomb)" },
+  { dow:3, tipo:"bb",     icon:"🏦", materia:"Conhecimentos Bancários + Atualidades", sub:"SFN · produtos bancários · mercado financeiro" },
+  { dow:4, tipo:"bb",     icon:"🌎", materia:"Inglês + Redação",                      sub:"Leitura instrumental · dissertação"            },
+  { dow:5, tipo:"shared", icon:"💻", materia:"Informática + Atualidades",              sub:"Office · redes · segurança · notícias"        },
+  { dow:6, tipo:"bomb",   icon:"🚒", materia:null,                                    sub:"Rodízio mensal — 4 matérias"                  },
+];
+const CRON_BOMB = [
+  { nome:"Física",                 icon:"⚛️", tip:"Vantagem UFRPE ✅"       },
+  { nome:"Biologia + Atualidades", icon:"🧬", tip:"Ciências + notícias"    },
+  { nome:"Direito Constitucional", icon:"⚖️", tip:"CF/88 — arts. principais"},
+  { nome:"Hist. de Pernambuco",    icon:"🏛️", tip:"Formação histórica"     },
+];
+const CRON_PHASES = [
+  { n:1, label:"Base Sólida",    qMeta:8,  periodo:"Meses 1–2", cor:"#1d4ed8" },
+  { n:2, label:"Específicos BB", qMeta:12, periodo:"Meses 3–4", cor:"#16a34a" },
+  { n:3, label:"Consolidação",   qMeta:18, periodo:"Mês 5+",    cor:"#7c3aed" },
+];
+const CRON_XP = { teoria:15, questoes:20, revisao:10, full:30 };
+const CRON_ZERO = { phase:1, bomb_week:0, date:"", teoria:false, questoes:false, revisao:false, q_count:0, xp_day:0 };
 
 const RUN_XP=(km)=>km>=10?60:km>=8?48:km>=6?38:km>=4?28:km>=2?18:10;
 const FIN_XP=(v)=>v>=500?40:v>=300?30:v>=100?20:10;
@@ -315,6 +338,7 @@ function checkAchievements(char, lv, existing=[]) {
 }
 
 const START={
+  cronograma: { ...CRON_ZERO },
   username:"",totalXP:30,
   attrs:{forca:6,resistencia:5,inteligencia:6,foco:5,mental:4,disciplina:4},
   stats:{totalWorkouts:0,totalStudyHours:0,activeDays:0,totalQuests:0,totalKm:0,totalRuns:0,prKm:0,totalQuestions:0,booksFinished:0,streakBest:0,bossesCleared:0},
@@ -571,6 +595,7 @@ export default function App(){
         }));
 
         loaded={...START,...c,
+          cronograma: { ...CRON_ZERO, ...(c.cronograma||{}) },
           stats:{...START.stats,...(c.stats||{})},
           finance:{salary:c.finance?.salary||800,expenses:c.finance?.expenses||START.finance.expenses},
           streak:{...START.streak,...(c.streak||{})},
@@ -1351,7 +1376,53 @@ Analise esses dados e responda de forma personalizada e útil. Seja específico,
       sendMentorMessage("Analise meu progresso atual e me dê seus 3 principais conselhos para esta semana.");
     }
   };
+// ── HANDLERS CRONOGRAMA ──
+const cronToday = () => {
+  const cron = { ...CRON_ZERO, ...(charRef.current?.cronograma || {}) };
+  return cron.date === todayStr()
+    ? cron
+    : { ...cron, date: todayStr(), teoria: false, questoes: false, revisao: false, q_count: 0, xp_day: 0 };
+};
 
+const toggleCronTask = async (task) => {
+  const c = charRef.current;
+  const dow = new Date().getDay();
+  const cron = cronToday();
+  const wasAll = cron.teoria && cron.questoes && cron.revisao;
+  const newVal = !cron[task];
+  const updated = { ...cron, [task]: newVal };
+  const nowAll = updated.teoria && updated.questoes && updated.revisao;
+  let xpDelta = newVal ? CRON_XP[task] : -CRON_XP[task];
+  if (nowAll && !wasAll)  xpDelta += CRON_XP.full;
+  if (!nowAll && wasAll)  xpDelta -= CRON_XP.full;
+  updated.xp_day = Math.max(0, (cron.xp_day || 0) + xpDelta);
+  if (nowAll && !wasAll && dow === 6)
+    updated.bomb_week = ((cron.bomb_week || 0) + 1) % 4;
+  const newXP = Math.max(0, c.totalXP + xpDelta);
+  let nc = { ...c, totalXP: newXP, cronograma: updated };
+  nc = await checkAndAwardAch(nc);
+  charRef.current = nc; setChar(nc);
+  if (xpDelta !== 0) addFloat(xpDelta);
+  triggerLvl(c.totalXP, newXP);
+  await save(nc, null, null);
+};
+
+const adjustCronQ = async (delta) => {
+  const c = charRef.current;
+  const cron = cronToday();
+  const q = Math.max(0, Math.min(99, (cron.q_count || 0) + delta));
+  const nc = { ...c, cronograma: { ...cron, q_count: q } };
+  charRef.current = nc; setChar(nc);
+  await save(nc, null, null);
+};
+
+const setCronPhase = async (p) => {
+  const c = charRef.current;
+  const nc = { ...c, cronograma: { ...(c.cronograma || CRON_ZERO), phase: p } };
+  charRef.current = nc; setChar(nc);
+  await save(nc, null, null);
+  showToast(`Fase ${p} ativa!`, CRON_PHASES[p - 1]?.cor || "#f0c040");
+};
   // ═══════════════════════════════════════════════════════════════
   // RENDER
   // ═══════════════════════════════════════════════════════════════
@@ -1983,7 +2054,13 @@ Analise esses dados e responda de forma personalizada e útil. Seja específico,
         </div>}
 
         {/* ── STUDY ── */}
-        {tab==="study"&&<div style={{padding:"12px 12px 0"}}>
+        <STabs tabs={[
+  {id:"cronograma",i:"📅",l:"Plano",   c:"#34d399"},
+  {id:"timer",     i:"⏱️",l:"Estudo",  c:"#60a5fa"},
+  {id:"questoes",  i:"🎯",l:"Questões",c:"#a78bfa"},
+  {id:"simulado",  i:"📋",l:"Simulado",c:"#f97316"},
+  {id:"livros",    i:"📖",l:"Livros",  c:"#f0c040"},
+]} val={studyTab} onChange={setStudyTab}/>
           {/* Concurso selector */}
           <div style={{display:"flex",gap:5,marginBottom:6}}>
             <select className="inp" style={{flex:1}} value={char.activeConcurso} onChange={e=>switchConcurso(e.target.value)}>
@@ -2021,6 +2098,150 @@ Analise esses dados e responda de forma personalizada e útil. Seja específico,
           <STabs tabs={[{id:"timer",i:"⏱️",l:"Estudo",c:"#60a5fa"},{id:"questoes",i:"🎯",l:"Questões",c:"#a78bfa"},{id:"simulado",i:"📋",l:"Simulado",c:"#f97316"},{id:"livros",i:"📖",l:"Livros",c:"#f0c040"}]} val={studyTab} onChange={setStudyTab}/>
 
           {/* TIMER */}
+        {studyTab==="cronograma"&&(()=>{
+  const dow  = new Date().getDay();
+  const sch  = CRON_WEEK[dow];
+  const cron = cronToday();
+  const bomb = CRON_BOMB[cron.bomb_week % 4];
+  const fase = CRON_PHASES[(cron.phase - 1)] || CRON_PHASES[0];
+  const mat  = dow === 6 ? `${bomb.icon} ${bomb.nome}` : sch.materia;
+  const sub  = dow === 6 ? bomb.tip : sch.sub;
+  const all  = cron.teoria && cron.questoes && cron.revisao;
+  const TC = {
+    shared:{ bd:"#166534", tc:"#86efac", bg:"#031008" },
+    bb:    { bd:"#1d4ed8", tc:"#93c5fd", bg:"#030818" },
+    bomb:  { bd:"#991b1b", tc:"#fca5a5", bg:"#160303" },
+    rest:  { bd:"#374151", tc:"#9ca3af", bg:"#111827" },
+  }[sch.tipo];
+
+  return(
+    <div>
+
+      {/* ─ Matéria do dia ─ */}
+      <div style={{background:TC.bg,border:`1px solid ${TC.bd}`,borderRadius:13,padding:13,marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+          <div>
+            <div style={{fontSize:15,fontWeight:700,color:TC.tc}}>{mat}</div>
+            <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{sub}</div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <span style={{fontSize:26}}>{sch.icon}</span>
+            {cron.xp_day>0&&<span style={{fontFamily:"Cinzel,serif",fontSize:13,fontWeight:700,color:"#fcd34d"}}>+{cron.xp_day}XP</span>}
+          </div>
+        </div>
+        <div style={{display:"flex",gap:6}}>
+          {[["65","Teoria","#1e40af"],["30","Questões","#166534"],["25","Revisão","#5b21b6"]].map(([m,l,cor])=>(
+            <div key={l} style={{flex:1,background:cor+"44",borderRadius:8,padding:"7px 4px",textAlign:"center"}}>
+              <div style={{fontSize:20,fontWeight:800,color:"#e2e8f0",lineHeight:1}}>{m}</div>
+              <div style={{fontSize:9,color:"#94a3b8",marginTop:2}}>min · {l}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ─ Checklist ─ */}
+      {sch.tipo!=="rest"&&<>
+        <Lbl>TAREFAS DO DIA</Lbl>
+        {[
+          {key:"teoria",  icon:"📖",label:"Teoria",  desc:"65 min de conteúdo",       xp:CRON_XP.teoria  },
+          {key:"questoes",icon:"❓",label:"Questões", desc:`Meta: ${fase.qMeta}q`,    xp:CRON_XP.questoes},
+          {key:"revisao", icon:"🔄",label:"Revisão",  desc:"25 min de fixação",        xp:CRON_XP.revisao },
+        ].map(t=>(
+          <button key={t.key} className="btn" onClick={()=>toggleCronTask(t.key)} style={{marginBottom:6}}>
+            <div style={{
+              display:"flex",alignItems:"center",gap:10,
+              background:cron[t.key]?"#0d2a18":"#0f0f1e",
+              border:`1px solid ${cron[t.key]?"#16a34a":"#1a1838"}`,
+              borderRadius:10,padding:"11px 12px",
+            }}>
+              <div style={{
+                width:22,height:22,borderRadius:"50%",flexShrink:0,
+                background:cron[t.key]?"#16a34a":"#1e293b",
+                border:`2px solid ${cron[t.key]?"#22c55e":"#334155"}`,
+                display:"flex",alignItems:"center",justifyContent:"center",
+                fontSize:11,color:"#fff",
+              }}>{cron[t.key]?"✓":""}</div>
+              <span style={{fontSize:18}}>{t.icon}</span>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,fontWeight:600,color:cron[t.key]?"#86efac":"#e8dfc0"}}>{t.label}</div>
+                <div style={{fontSize:11,color:"#64748b"}}>{t.desc}</div>
+              </div>
+              <span style={{fontFamily:"Cinzel,serif",fontSize:11,fontWeight:700,color:"#fcd34d"}}>+{t.xp}</span>
+            </div>
+          </button>
+        ))}
+
+        {all&&<div style={{background:"#052e16",border:"1px solid #16a34a",borderRadius:10,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <span style={{fontFamily:"Cinzel,serif",fontSize:13,fontWeight:700,color:"#86efac"}}>🔥 Dia completo!</span>
+          <span style={{fontFamily:"Cinzel,serif",fontSize:13,fontWeight:800,color:"#fcd34d"}}>+{CRON_XP.full} XP</span>
+        </div>}
+
+        {/* Contador de questões */}
+        <div style={{background:"#0f0f1e",border:"1px solid #1a1838",borderRadius:11,padding:12,marginBottom:12}}>
+          <Lbl mb={8}>❓ QUESTÕES FEITAS HOJE</Lbl>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:14}}>
+            <button className="tbtn" onClick={()=>adjustCronQ(-1)} style={{width:38,height:38,borderRadius:9,background:"#1e293b",border:"1px solid #334155",color:"#e8dfc0",fontSize:22}}>−</button>
+            <div style={{textAlign:"center",minWidth:64}}>
+              <div style={{fontSize:34,fontWeight:800,lineHeight:1,color:cron.q_count>=fase.qMeta?"#fcd34d":"#e8dfc0"}}>{cron.q_count}</div>
+              <div style={{fontSize:10,color:"#64748b",marginTop:2}}>meta {fase.qMeta}</div>
+            </div>
+            <button className="tbtn" onClick={()=>adjustCronQ(1)} style={{width:38,height:38,borderRadius:9,background:"#1e293b",border:"1px solid #334155",color:"#e8dfc0",fontSize:22}}>+</button>
+          </div>
+          {cron.q_count>=fase.qMeta&&<div style={{textAlign:"center",fontSize:12,color:"#fcd34d",fontFamily:"Cinzel,serif",marginTop:6}}>⭐ Meta atingida!</div>}
+        </div>
+      </>}
+
+      {/* ─ Semana ─ */}
+      <Lbl>SEMANA COMPLETA</Lbl>
+      {CRON_WEEK.map((s,i)=>{
+        const isT=i===dow;
+        const tc2={shared:{tc:"#86efac",bd:"#166534"},bb:{tc:"#93c5fd",bd:"#1d4ed8"},bomb:{tc:"#fca5a5",bd:"#991b1b"},rest:{tc:"#9ca3af",bd:"#374151"}}[s.tipo];
+        const mat2=i===6?`${bomb.icon} ${bomb.nome}`:s.materia;
+        return(
+          <div key={i} style={{display:"flex",alignItems:"center",gap:10,background:isT?"#0f0f1e":"transparent",border:`1px solid ${isT?tc2.bd:"transparent"}`,borderRadius:9,padding:"8px 10px",marginBottom:4}}>
+            <span style={{fontSize:16,flexShrink:0}}>{s.icon}</span>
+            <div style={{flex:1}}>
+              <div style={{display:"flex",alignItems:"center",gap:5}}>
+                <span style={{fontSize:10,fontWeight:700,color:"#475569",width:24}}>{["D","S","T","Q","Q","S","S"][i]}</span>
+                <span style={{fontSize:12,color:isT?tc2.tc:"#64748b",fontWeight:isT?700:400}}>{mat2}</span>
+                {isT&&<span style={{fontSize:9,background:tc2.bd,color:tc2.tc,padding:"1px 6px",borderRadius:3,fontFamily:"Cinzel,serif"}}>HOJE</span>}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
+      {/* ─ Fase ─ */}
+      <Lbl style={{marginTop:14}}>FASE DE ESTUDOS</Lbl>
+      <div style={{display:"flex",gap:6,marginBottom:8}}>
+        {CRON_PHASES.map(f=>(
+          <button key={f.n} className="tbtn" onClick={()=>setCronPhase(f.n)} style={{
+            flex:1,padding:"9px 4px",borderRadius:9,fontSize:11,
+            fontWeight:cron.phase===f.n?700:400,
+            background:cron.phase===f.n?f.cor+"33":"#0f0f1e",
+            border:`1px solid ${cron.phase===f.n?f.cor:"#1a1838"}`,
+            color:cron.phase===f.n?"#fff":"#555",
+          }}>
+            F{f.n}<br/><span style={{fontSize:8,fontWeight:400}}>{f.periodo}</span>
+          </button>
+        ))}
+      </div>
+      <div style={{background:fase.cor+"22",border:`1px solid ${fase.cor}55`,borderRadius:9,padding:"10px 12px",marginBottom:12}}>
+        <div style={{fontSize:12,color:"#e8dfc0",fontWeight:600}}>{fase.label}</div>
+        <div style={{fontSize:11,color:"#64748b",marginTop:2}}>
+          Meta: <span style={{color:"#fcd34d",fontWeight:700}}>{fase.qMeta} questões/dia</span> · {fase.periodo}
+        </div>
+      </div>
+
+      {/* ─ Lembrete TAF (só sábado) ─ */}
+      {dow===6&&<div style={{background:"#1a0800",border:"1px solid #c2410c",borderRadius:10,padding:"11px 13px"}}>
+        <div style={{fontSize:12,fontWeight:700,color:"#fb923c",marginBottom:4}}>💪 TAF — treino físico separado</div>
+        <div style={{fontSize:11,color:"#94a3b8"}}>Bombeiro PE exige TAF eliminatório. Use o módulo Corrida + Treino para registrar.</div>
+      </div>}
+
+    </div>
+  );
+})()}
           {studyTab==="timer"&&<>
             {(ac?.subjects||[]).length===0?(
               <Card style={{textAlign:"center",padding:"20px"}}><div style={{fontSize:32,marginBottom:8}}>📚</div><div style={{fontSize:12,color:"#555",marginBottom:10}}>Nenhuma matéria cadastrada</div><button className="sbtn" onClick={()=>{setEditingConcursoId(ac?.id);setEditingSubjects(true);}} style={{background:"#1a1535",border:"1px solid #60a5fa55",color:"#60a5fa",fontSize:10}}>+ ADICIONAR MATÉRIAS</button></Card>
