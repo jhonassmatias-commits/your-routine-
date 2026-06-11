@@ -2663,24 +2663,26 @@ const setCronPhase = async (p) => {
             <div style={{marginTop:8,fontSize:9,color:"#333",fontFamily:"Cinzel,serif",textAlign:"center",letterSpacing:1}}>Notificações: streak em risco, treino parado, boss semanal</div>
           </>}
 
-          {lifeTab==="perfil"&&<>
-            <Card style={{marginBottom:10}}>
-              <div style={{display:"flex",alignItems:"center",gap:12}}>
-                <div onClick={()=>setShowAvatarEditor(v=>!v)} style={{cursor:"pointer",flexShrink:0}}>
-                  <AvatarSVG {...(char.avatar||{})} size={70}/>
-                  <div style={{fontSize:8,color:"#555",textAlign:"center",marginTop:2}}>toque para editar</div>
+          {lifeTab==="perfil" && (
+            <>
+              <Card style={{marginBottom:10}}>
+                <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <div onClick={()=>setShowAvatarEditor(v=>!v)} style={{cursor:"pointer",flexShrink:0}}>
+                    <AvatarSVG {...(char.avatar||{})} size={70}/>
+                    <div style={{fontSize:8,color:"#555",textAlign:"center",marginTop:2}}>toque para editar</div>
+                  </div>
+                  <div style={{flex:1}}>
+                    {editingUsername?<div><input className="inp" value={usernameIn} onChange={e=>setUsernameIn(e.target.value)} placeholder="Seu nome" style={{marginBottom:6}}/><div style={{display:"flex",gap:5}}><button className="tbtn" onClick={saveUsername} style={{flex:1,padding:"7px",borderRadius:7,background:"#f0c04022",border:"1px solid #f0c04055",color:"#f0c040",fontFamily:"Cinzel,serif",fontSize:9}}>✓ SALVAR</button><button className="tbtn" onClick={()=>setEditingUsername(false)} style={{padding:"7px 10px",borderRadius:7,border:"1px solid #2a2848",color:"#555",fontSize:11}}>✕</button></div></div>:<button className="tbtn" onClick={()=>{setEditingUsername(true);setUsernameIn(char.username||"");}} style={{background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:6,marginBottom:4}}><span style={{fontFamily:"Cinzel,serif",fontSize:18,color:"#f0c040",letterSpacing:2}}>{char.username||"Jogador"}</span><span style={{fontSize:10,color:"#444"}}>✎</span></button>}
+                    <div style={{fontSize:10,color:"#a78bfa",fontFamily:"Cinzel,serif"}}>{dynTitle.icon} {dynTitle.title}</div>
+                    <div style={{fontSize:10,color:"#555",marginTop:3}}>Lv.{cur.lv} · {cur.title} · {char.totalXP.toLocaleString()} XP</div>
+                    {char.firebaseUid?<div style={{fontSize:9,color:"#555",marginTop:2}}>ID: {char.firebaseUid}</div>:<button className="tbtn" onClick={generateFirebaseUid} style={{marginTop:6,padding:"6px 12px",borderRadius:8,background:"linear-gradient(135deg,#a78bfa,#7c3aed)",border:"none",color:"#fff",fontFamily:"Cinzel,serif",fontSize:9,letterSpacing:1,cursor:"pointer"}}>🔑 GERAR MEU ID</button>}
+                  </div>
                 </div>
-                <div style={{flex:1}}>
-                  {editingUsername?<div><input className="inp" value={usernameIn} onChange={e=>setUsernameIn(e.target.value)} placeholder="Seu nome" style={{marginBottom:6}}/><div style={{display:"flex",gap:5}}><button className="tbtn" onClick={saveUsername} style={{flex:1,padding:"7px",borderRadius:7,background:"#f0c04022",border:"1px solid #f0c04055",color:"#f0c040",fontFamily:"Cinzel,serif",fontSize:9}}>✓ SALVAR</button><button className="tbtn" onClick={()=>setEditingUsername(false)} style={{padding:"7px 10px",borderRadius:7,border:"1px solid #2a2848",color:"#555",fontSize:11}}>✕</button></div></div>:<button className="tbtn" onClick={()=>{setEditingUsername(true);setUsernameIn(char.username||"");}} style={{background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:6,marginBottom:4}}><span style={{fontFamily:"Cinzel,serif",fontSize:18,color:"#f0c040",letterSpacing:2}}>{char.username||"Jogador"}</span><span style={{fontSize:10,color:"#444"}}>✎</span></button>}
-                  <div style={{fontSize:10,color:"#a78bfa",fontFamily:"Cinzel,serif"}}>{dynTitle.icon} {dynTitle.title}</div>
-                  <div style={{fontSize:10,color:"#555",marginTop:3}}>Lv.{cur.lv} · {cur.title} · {char.totalXP.toLocaleString()} XP</div>
-                  {char.firebaseUid?<div style={{fontSize:9,color:"#555",marginTop:2}}>ID: {char.firebaseUid}</div>:<button className="tbtn" onClick={generateFirebaseUid} style={{marginTop:6,padding:"6px 12px",borderRadius:8,background:"linear-gradient(135deg,#a78bfa,#7c3aed)",border:"none",color:"#fff",fontFamily:"Cinzel,serif",fontSize:9,letterSpacing:1,cursor:"pointer"}}>🔑 GERAR MEU ID</button>}
-                </div>
-              </div>
-            </Card>
-            <Lbl>ROADMAP — 20 NÍVEIS</Lbl>
-            {LEVELS.map(lvl=>{const tU=timeUnlocked(lvl.months),xpOk=char.totalXP>=lvl.xp,isCur=cur.lv===lvl.lv,isPast=cur.lv>lvl.lv,uDate=unlockDate(lvl.months);return<div key={lvl.lv} style={{background:isCur?`linear-gradient(135deg,${lvl.color}18,${lvl.color}08)`:"#0f0f1e",border:`1px solid ${isCur?lvl.color+"66":isPast?"#2a2848":"#1a1838"}`,borderRadius:9,padding:"8px 12px",marginBottom:4,display:"flex",alignItems:"center",gap:9,opacity:!tU?0.4:1}}><div style={{fontFamily:"Cinzel,serif",fontWeight:900,fontSize:13,color:isPast?lvl.color:tU?"#e8dfc0":"#444",width:22,textAlign:"center",flexShrink:0}}>{isPast?"✓":tU?lvl.lv:"🔒"}</div><div style={{flex:1,minWidth:0}}><div style={{fontFamily:"Cinzel,serif",fontSize:10,color:tU?"#e8dfc0":"#444"}}>{lvl.title}</div><div style={{fontSize:9,color:"#444"}}>{lvl.xp.toLocaleString()} XP</div>{!tU&&<div style={{fontSize:8,color:"#f0c04055",fontFamily:"Cinzel,serif"}}>🔒 {uDate.toLocaleDateString("pt-BR",{month:"short",year:"numeric"})} ({daysLeft(uDate)}d)</div>}{tU&&!xpOk&&!isPast&&<div style={{fontSize:8,color:"#a78bfa77"}}>Faltam {(lvl.xp-char.totalXP).toLocaleString()} XP</div>}</div>{isCur&&<div style={{fontSize:7,fontFamily:"Cinzel,serif",color:lvl.color,border:`1px solid ${lvl.color}55`,borderRadius:4,padding:"2px 5px",flexShrink:0}}>ATUAL</div>}</div>;})}
-          </>}
+              </Card>
+              <Lbl>ROADMAP — 20 NÍVEIS</Lbl>
+              {LEVELS.map(lvl=>{const tU=timeUnlocked(lvl.months),xpOk=char.totalXP>=lvl.xp,isCur=cur.lv===lvl.lv,isPast=cur.lv>lvl.lv,uDate=unlockDate(lvl.months);return<div key={lvl.lv} style={{background:isCur?`linear-gradient(135deg,${lvl.color}18,${lvl.color}08)`:"#0f0f1e",border:`1px solid ${isCur?lvl.color+"66":isPast?"#2a2848":"#1a1838"}`,borderRadius:9,padding:"8px 12px",marginBottom:4,display:"flex",alignItems:"center",gap:9,opacity:!tU?0.4:1}}><div style={{fontFamily:"Cinzel,serif",fontWeight:900,fontSize:13,color:isPast?lvl.color:tU?"#e8dfc0":"#444",width:22,textAlign:"center",flexShrink:0}}>{isPast?"✓":tU?lvl.lv:"🔒"}</div><div style={{flex:1,minWidth:0}}><div style={{fontFamily:"Cinzel,serif",fontSize:10,color:tU?"#e8dfc0":"#444"}}>{lvl.title}</div><div style={{fontSize:9,color:"#444"}}>{lvl.xp.toLocaleString()} XP</div>{!tU&&<div style={{fontSize:8,color:"#f0c04055",fontFamily:"Cinzel,serif"}}>🔒 {uDate.toLocaleDateString("pt-BR",{month:"short",year:"numeric"})} ({daysLeft(uDate)}d)</div>}{tU&&!xpOk&&!isPast&&<div style={{fontSize:8,color:"#a78bfa77"}}>Faltam {(lvl.xp-char.totalXP).toLocaleString()} XP</div>}</div>{isCur&&<div style={{fontSize:7,fontFamily:"Cinzel,serif",color:lvl.color,border:`1px solid ${lvl.color}55`,borderRadius:4,padding:"2px 5px",flexShrink:0}}>ATUAL</div>}</div>;})}
+            </>
+          )}
         </div>}
 
       </div>
@@ -2705,3 +2707,4 @@ const setCronPhase = async (p) => {
     </div>
   );
 }
+
