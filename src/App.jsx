@@ -2054,13 +2054,7 @@ const setCronPhase = async (p) => {
         </div>}
 
         {/* ── STUDY ── */}
-        <STabs tabs={[
-  {id:"cronograma",i:"📅",l:"Plano",   c:"#34d399"},
-  {id:"timer",     i:"⏱️",l:"Estudo",  c:"#60a5fa"},
-  {id:"questoes",  i:"🎯",l:"Questões",c:"#a78bfa"},
-  {id:"simulado",  i:"📋",l:"Simulado",c:"#f97316"},
-  {id:"livros",    i:"📖",l:"Livros",  c:"#f0c040"},
-]} val={studyTab} onChange={setStudyTab}/>
+        {tab==="study"&&<div style={{padding:"12px 12px 0"}}>
           {/* Concurso selector */}
           <div style={{display:"flex",gap:5,marginBottom:6}}>
             <select className="inp" style={{flex:1}} value={char.activeConcurso} onChange={e=>switchConcurso(e.target.value)}>
@@ -2094,8 +2088,7 @@ const setCronPhase = async (p) => {
               <button className="sbtn" onClick={addSubject} style={{background:`linear-gradient(135deg,${newSubColor}22,${newSubColor}11)`,border:`1px solid ${newSubColor}55`,color:newSubColor,fontSize:10}}>+ ADICIONAR MATÉRIA</button>
             </div>
           </Card>}
-
-          <STabs tabs={[{id:"timer",i:"⏱️",l:"Estudo",c:"#60a5fa"},{id:"questoes",i:"🎯",l:"Questões",c:"#a78bfa"},{id:"simulado",i:"📋",l:"Simulado",c:"#f97316"},{id:"livros",i:"📖",l:"Livros",c:"#f0c040"}]} val={studyTab} onChange={setStudyTab}/>
+          <STabs tabs={[{id:"cronograma",i:"📅",l:"Plano",c:"#34d399"},{id:"timer",i:"⏱️",l:"Estudo",c:"#60a5fa"},{id:"questoes",i:"🎯",l:"Questões",c:"#a78bfa"},{id:"simulado",i:"📋",l:"Simulado",c:"#f97316"},{id:"livros",i:"📖",l:"Livros",c:"#f0c040"}]} val={studyTab} onChange={setStudyTab}/>
 
           {/* TIMER */}
         {studyTab==="cronograma"&&(()=>{
