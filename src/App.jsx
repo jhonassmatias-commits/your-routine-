@@ -275,70 +275,28 @@ const SUBJECT_ICONS=["📝","🧩","📊","🏦","📰","💻","🌎","✍️","
 const SUBJECT_COLORS=["#60a5fa","#a78bfa","#34d399","#f59e0b","#f97316","#22d3ee","#ec4899","#84cc16","#ef4444","#f0c040","#4ecdc4","#fb923c"];
 const HABIT_ICONS=["💧","🧘","🥗","😴","📵","🚶","🎸","✍️","🌅","🛁","💊","🙏","📓","🎯","🧹","🌿"];
 const HABIT_COLORS=["#60a5fa","#34d399","#f59e0b","#a78bfa","#f97316","#22d3ee","#ec4899","#84cc16","#ef4444","#f0c040"];
-
-// ── CRONOGRAMA (editável) ──
-// Estrutura por dia da semana (0=domingo ... 6=sábado), cada dia é uma lista de blocos.
-// Cada bloco: { id, duracao_minutos, disciplina, foco }
-const WEEKDAY_LABELS = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
-const WEEKDAY_SHORT  = ["D","S","T","Q","Q","S","S"];
-const WEEKDAY_ICONS  = ["🏆","📝","⚖️","🧮","🧬","🗣️","🎯"];
-const WEEKDAY_COLORS = ["#f0c040","#60a5fa","#a78bfa","#34d399","#ec4899","#22d3ee","#f97316"];
-const SUBJECT_ICON_MAP = {
-  "Língua Portuguesa":"📝","Matemática":"➗","Raciocínio Lógico":"🧩","Direito Constitucional":"⚖️",
-  "Biologia":"🧬","Física":"⚛️","Informática":"💻","História de Pernambuco":"🏛️","Atualidades":"📰",
-  "Caderno de Erros":"📕","Física / Matemática":"🧮","Matéria Gargalo":"🚧","Flashcards / Fórmulas":"🗂️",
-  "Simulado Geral":"📋","Análise de Desempenho":"📊",
-};
-const guessSubjectIcon=(name)=>SUBJECT_ICON_MAP[name]||"📖";
-
-const mkBlock=(duracao_minutos,disciplina,foco)=>({id:`b_${Math.random().toString(36).slice(2,9)}`,duracao_minutos,disciplina,foco});
-
-// dow: 0=domingo,1=segunda,2=terça,3=quarta,4=quinta,5=sexta,6=sábado
-const DEFAULT_SCHEDULE = {
-  1:[
-    mkBlock(120,"Língua Portuguesa","Teoria Avançada + Questões da Banca"),
-    mkBlock(90,"História de Pernambuco","Teoria (Leitura Dinâmica) + Resumos"),
-    mkBlock(90,"Informática","Teoria + Questões de Fixação"),
-    mkBlock(60,"Matemática","Apenas Questões (Manutenção de Base)"),
-  ],
-  2:[
-    mkBlock(120,"Direito Constitucional","Teoria (Letra da Lei) + Questões"),
-    mkBlock(90,"Biologia","Teoria + Mapeamento de Conceitos"),
-    mkBlock(90,"Raciocínio Lógico","Prática de Padrões de Questões"),
-    mkBlock(60,"Física","Apenas Questões + Revisão de Fórmulas"),
-  ],
-  3:[
-    mkBlock(120,"Língua Portuguesa","Sintaxe e Interpretação (Foco em Questões)"),
-    mkBlock(90,"História de Pernambuco","Revisão de Tópicos + Questões da Banca"),
-    mkBlock(90,"Atualidades","Leitura de Noticiários + Temas Quentes"),
-    mkBlock(60,"Matemática","Apenas Questões (Simulado de Tópicos)"),
-  ],
-  4:[
-    mkBlock(120,"Direito Constitucional","Direitos e Garantias Fundamentais + Questões"),
-    mkBlock(90,"Biologia","Exercícios + Revisão de Pontos Cegos"),
-    mkBlock(90,"Informática","Resolução de Questões de Provas Anteriores"),
-    mkBlock(60,"Caderno de Erros","Revisar erros cometidos de Segunda a Quinta"),
-  ],
-  5:[
-    mkBlock(120,"Língua Portuguesa","Revisão de Erros Recorrentes + Questões"),
-    mkBlock(90,"Direito Constitucional","Organização do Estado / Segurança Pública"),
-    mkBlock(90,"Raciocínio Lógico","Resolução de Problemas Complexos"),
-    mkBlock(60,"Física / Matemática","Mesclado: 30min de questões de cada"),
-  ],
-  6:[
-    mkBlock(120,"Direito Constitucional","Maratona de Questões (Consolidação)"),
-    mkBlock(90,"Língua Portuguesa","Resolução de Provas Íntegras da Banca"),
-    mkBlock(90,"Matéria Gargalo","Espaço reservado para a matéria mais difícil da semana"),
-    mkBlock(60,"Flashcards / Fórmulas","Revisão ativa e memorização rápida"),
-  ],
-  0:[
-    mkBlock(210,"Simulado Geral","Aplicação de Simulado de 60 Questões (Tempo Real)"),
-    mkBlock(150,"Análise de Desempenho","Mapeamento detalhado de erros e ajuste de rota"),
-  ],
-};
-const SCHEDULE_ZERO={date:"",completed:{},xp_day:0};
-const blockXP=(min)=>Math.max(5,Math.round((min||0)/5));
-
+// ── CRONOGRAMA ──
+const CRON_WEEK = [
+  { dow:0, tipo:"rest",   icon:"💤", materia:"Descanso",                            sub:"Revisão rápida opcional (20 min)"              },
+  { dow:1, tipo:"shared", icon:"📝", materia:"Língua Portuguesa",                    sub:"Interpretação · gramática · coesão · redação"  },
+  { dow:2, tipo:"shared", icon:"🧩", materia:"Matemática + Raciocínio Lógico",        sub:"Mat. Financeira → aritmética · Lógica (Bomb)" },
+  { dow:3, tipo:"bb",     icon:"🏦", materia:"Conhecimentos Bancários + Atualidades", sub:"SFN · produtos bancários · mercado financeiro" },
+  { dow:4, tipo:"bb",     icon:"🌎", materia:"Inglês + Redação",                      sub:"Leitura instrumental · dissertação"            },
+  { dow:5, tipo:"shared", icon:"💻", materia:"Informática + Atualidades",              sub:"Office · redes · segurança · notícias"        },
+  { dow:6, tipo:"bomb",   icon:"🚒", materia:null,                                    sub:"Rodízio mensal — 4 matérias"                  },
+];
+const CRON_BOMB = [
+  { nome:"Física",                 icon:"⚛️", tip:"Vantagem UFRPE ✅"       },
+  { nome:"Biologia + Atualidades", icon:"🧬", tip:"Ciências + notícias"    },
+  { nome:"Direito Constitucional", icon:"⚖️", tip:"CF/88 — arts. principais"},
+  { nome:"Hist. de Pernambuco",    icon:"🏛️", tip:"Formação histórica"     },
+];
+const CRON_PHASES = [
+  { n:1, label:"Base Sólida",    qMeta:8,  periodo:"Meses 1–2", cor:"#1d4ed8" },
+  { n:2, label:"Específicos BB", qMeta:12, periodo:"Meses 3–4", cor:"#16a34a" },
+  { n:3, label:"Consolidação",   qMeta:18, periodo:"Mês 5+",    cor:"#7c3aed" },
+];
+const CRON_XP = { teoria:15, questoes:20, revisao:10, full:30 };
 const CRON_ZERO = { phase:1, bomb_week:0, date:"", teoria:false, questoes:false, revisao:false, q_count:0, xp_day:0 };
 
 const RUN_XP=(km)=>km>=10?60:km>=8?48:km>=6?38:km>=4?28:km>=2?18:10;
@@ -381,8 +339,6 @@ function checkAchievements(char, lv, existing=[]) {
 
 const START={
   cronograma: { ...CRON_ZERO },
-  schedule: null,
-  scheduleProgress: { ...SCHEDULE_ZERO },
   username:"",totalXP:30,
   attrs:{forca:6,resistencia:5,inteligencia:6,foco:5,mental:4,disciplina:4},
   stats:{totalWorkouts:0,totalStudyHours:0,activeDays:0,totalQuests:0,totalKm:0,totalRuns:0,prKm:0,totalQuestions:0,booksFinished:0,streakBest:0,bossesCleared:0},
@@ -531,10 +487,6 @@ export default function App(){
   const [statsTab,setStatsTab]=useState("xp");
   const [achCat,setAchCat]=useState("all");
 
-  // Cronograma (plano de estudos editável)
-  const [cronDow,setCronDow]=useState(new Date().getDay());
-  const [cronEditMode,setCronEditMode]=useState(false);
-
   // Timer
   const [timerSub,setTimerSub]=useState(null);
   const [studyStart,setStudyStart]=useState("");
@@ -643,8 +595,7 @@ export default function App(){
         }));
 
         loaded={...START,...c,
-          schedule: c.schedule || null,
-          scheduleProgress: { ...SCHEDULE_ZERO, ...(c.scheduleProgress||{}) },
+          cronograma: { ...CRON_ZERO, ...(c.cronograma||{}) },
           stats:{...START.stats,...(c.stats||{})},
           finance:{salary:c.finance?.salary||800,expenses:c.finance?.expenses||START.finance.expenses},
           streak:{...START.streak,...(c.streak||{})},
@@ -1126,8 +1077,6 @@ export default function App(){
           unlockedAch:data.unlockedAch||[],questionLog:data.questionLog||[],
           habits:data.habits||[],moodLog:data.moodLog||[],
           simulados:data.simulados||[],studyGoals:data.studyGoals||{},xpHistory:data.xpHistory||[],
-          schedule:data.schedule||null,
-          scheduleProgress:{...SCHEDULE_ZERO,...(data.scheduleProgress||{})},
         };
         setChar(restored);
         save(restored,null,null);
@@ -1427,92 +1376,53 @@ Analise esses dados e responda de forma personalizada e útil. Seja específico,
       sendMentorMessage("Analise meu progresso atual e me dê seus 3 principais conselhos para esta semana.");
     }
   };
+// ── HANDLERS CRONOGRAMA ──
+const cronToday = () => {
+  const cron = { ...CRON_ZERO, ...(charRef.current?.cronograma || {}) };
+  return cron.date === todayStr()
+    ? cron
+    : { ...cron, date: todayStr(), teoria: false, questoes: false, revisao: false, q_count: 0, xp_day: 0 };
+};
 
-  // ── CRONOGRAMA (plano de estudos editável) ──
-  const getSchedule=()=>char?.schedule||DEFAULT_SCHEDULE;
-  const getDayBlocks=(dow)=>(getSchedule()[dow]||[]);
-  const dayTotalMinutes=(dow)=>getDayBlocks(dow).reduce((a,b)=>a+(b.duracao_minutos||0),0);
-  const dayTotalXP=(dow)=>getDayBlocks(dow).reduce((a,b)=>a+blockXP(b.duracao_minutos),0);
+const toggleCronTask = async (task) => {
+  const c = charRef.current;
+  const dow = new Date().getDay();
+  const cron = cronToday();
+  const wasAll = cron.teoria && cron.questoes && cron.revisao;
+  const newVal = !cron[task];
+  const updated = { ...cron, [task]: newVal };
+  const nowAll = updated.teoria && updated.questoes && updated.revisao;
+  let xpDelta = newVal ? CRON_XP[task] : -CRON_XP[task];
+  if (nowAll && !wasAll)  xpDelta += CRON_XP.full;
+  if (!nowAll && wasAll)  xpDelta -= CRON_XP.full;
+  updated.xp_day = Math.max(0, (cron.xp_day || 0) + xpDelta);
+  if (nowAll && !wasAll && dow === 6)
+    updated.bomb_week = ((cron.bomb_week || 0) + 1) % 4;
+  const newXP = Math.max(0, c.totalXP + xpDelta);
+  let nc = { ...c, totalXP: newXP, cronograma: updated };
+  nc = await checkAndAwardAch(nc);
+  charRef.current = nc; setChar(nc);
+  if (xpDelta !== 0) addFloat(xpDelta);
+  triggerLvl(c.totalXP, newXP);
+  await save(nc, null, null);
+};
 
-  const scheduleToday=()=>{
-    const sp=charRef.current?.scheduleProgress||SCHEDULE_ZERO;
-    return sp.date===todayStr()?sp:{...SCHEDULE_ZERO,date:todayStr()};
-  };
+const adjustCronQ = async (delta) => {
+  const c = charRef.current;
+  const cron = cronToday();
+  const q = Math.max(0, Math.min(99, (cron.q_count || 0) + delta));
+  const nc = { ...c, cronograma: { ...cron, q_count: q } };
+  charRef.current = nc; setChar(nc);
+  await save(nc, null, null);
+};
 
-  const toggleScheduleBlock=async(dow,block)=>{
-    const c=charRef.current;
-    const sp=scheduleToday();
-    const dayBlocks=getDayBlocks(dow);
-    const wasDone=!!sp.completed[block.id];
-    const wasAll=dayBlocks.length>0&&dayBlocks.every(b=>sp.completed[b.id]);
-    const newCompleted={...sp.completed};
-    if(wasDone) delete newCompleted[block.id]; else newCompleted[block.id]=true;
-    const nowAll=dayBlocks.length>0&&dayBlocks.every(b=>newCompleted[b.id]);
-    const xp=blockXP(block.duracao_minutos);
-    const bonus=Math.round(dayTotalXP(dow)*0.2);
-    let xpDelta=wasDone?-xp:xp;
-    if(nowAll&&!wasAll) xpDelta+=bonus;
-    if(!nowAll&&wasAll) xpDelta-=bonus;
-    const newXpDay=Math.max(0,(sp.xp_day||0)+xpDelta);
-    const updatedSP={date:todayStr(),completed:newCompleted,xp_day:newXpDay};
-    const newXP=Math.max(0,c.totalXP+xpDelta);
-    let nc={...c,totalXP:newXP,scheduleProgress:updatedSP};
-    nc=await checkAndAwardAch(nc);
-    charRef.current=nc;setChar(nc);
-    if(xpDelta!==0) addFloat(xpDelta);
-    triggerLvl(c.totalXP,newXP);
-    await save(nc,null,null);
-  };
-
-  const updateScheduleBlock=async(dow,blockId,field,value)=>{
-    const c=charRef.current;
-    const sched={...getSchedule()};
-    sched[dow]=(sched[dow]||[]).map(b=>b.id===blockId?{...b,[field]:field==="duracao_minutos"?(parseInt(value)||0):value}:b);
-    const nc={...c,schedule:sched};
-    charRef.current=nc;setChar(nc);await save(nc,null,null);
-  };
-
-  const addScheduleBlock=async(dow)=>{
-    const c=charRef.current;
-    const sched={...getSchedule()};
-    const list=sched[dow]||[];
-    const newBlock=mkBlock(60,"Nova disciplina","Descreva o foco deste bloco");
-    sched[dow]=[...list,newBlock];
-    const nc={...c,schedule:sched};
-    charRef.current=nc;setChar(nc);await save(nc,null,null);
-    showToast("Bloco adicionado!","#34d399");
-  };
-
-  const removeScheduleBlock=async(dow,blockId)=>{
-    const c=charRef.current;
-    const sched={...getSchedule()};
-    sched[dow]=(sched[dow]||[]).filter(b=>b.id!==blockId);
-    const nc={...c,schedule:sched};
-    charRef.current=nc;setChar(nc);await save(nc,null,null);
-    showToast("Bloco removido","#ef4444");
-  };
-
-  const moveScheduleBlock=async(dow,idx,dir)=>{
-    const c=charRef.current;
-    const sched={...getSchedule()};
-    const list=[...(sched[dow]||[])];
-    const j=idx+dir;
-    if(j<0||j>=list.length) return;
-    [list[idx],list[j]]=[list[j],list[idx]];
-    sched[dow]=list;
-    const nc={...c,schedule:sched};
-    charRef.current=nc;setChar(nc);await save(nc,null,null);
-  };
-
-  const resetScheduleDay=async(dow)=>{
-    const c=charRef.current;
-    const sched={...getSchedule()};
-    sched[dow]=(DEFAULT_SCHEDULE[dow]||[]).map(b=>({...b,id:`b_${Math.random().toString(36).slice(2,9)}`}));
-    const nc={...c,schedule:sched};
-    charRef.current=nc;setChar(nc);await save(nc,null,null);
-    showToast("Dia restaurado ao padrão","#60a5fa");
-  };
-
+const setCronPhase = async (p) => {
+  const c = charRef.current;
+  const nc = { ...c, cronograma: { ...(c.cronograma || CRON_ZERO), phase: p } };
+  charRef.current = nc; setChar(nc);
+  await save(nc, null, null);
+  showToast(`Fase ${p} ativa!`, CRON_PHASES[p - 1]?.cor || "#f0c040");
+};
   // ═══════════════════════════════════════════════════════════════
   // RENDER
   // ═══════════════════════════════════════════════════════════════
@@ -1717,4 +1627,45 @@ Analise esses dados e responda de forma personalizada e útil. Seja específico,
       {toast&&<div style={{position:"fixed",top:14,left:"50%",transform:"translateX(-50%)",zIndex:400,animation:"fadeIn 0.3s ease",background:"#111122ee",border:`1px solid ${toast.color}55`,borderRadius:12,padding:"10px 20px",fontSize:12,color:toast.color,fontFamily:"Cinzel,serif",letterSpacing:1,whiteSpace:"nowrap",pointerEvents:"none"}}>{toast.msg}</div>}
 
       {/* Level Up */}
-      {lvlUpMsg&&<div style={{position:"fixed",inset:0,zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",background:"#00000099",pointerEvents:"none"}}><div style={{animation:"lvlUp 3.5s ease-in-out forwards",background:"linear-gradient(135deg,#1a0d00,#2a1800)",border:`2px solid ${lvlUpMsg.color}`,borderRadius:22,padding:"28px 48px",textAlign:"center",boxShadow:`0 0 80px ${lvlUpMsg.color}55`}}><div style={{fontSize:48}}>⬆️</div><div style={{fontFamily:"Cinzel,serif",fontSize:9,letterSpacing:5,color:"#888",margin:"8px 0 4px"}}>LEVEL UP</div><div style={{fontFamily:"Cinzel,serif",fontSize:34,fontWeight:900,color:lvlUpMsg.color}}>{lvlUpMsg.lv}</div><div style={{fontFamily:"Cinzel,serif",fontSize:14,color:"#e8dfc0
+      {lvlUpMsg&&<div style={{position:"fixed",inset:0,zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",background:"#00000099",pointerEvents:"none"}}><div style={{animation:"lvlUp 3.5s ease-in-out forwards",background:"linear-gradient(135deg,#1a0d00,#2a1800)",border:`2px solid ${lvlUpMsg.color}`,borderRadius:22,padding:"28px 48px",textAlign:"center",boxShadow:`0 0 80px ${lvlUpMsg.color}55`}}><div style={{fontSize:48}}>⬆️</div><div style={{fontFamily:"Cinzel,serif",fontSize:9,letterSpacing:5,color:"#888",margin:"8px 0 4px"}}>LEVEL UP</div><div style={{fontFamily:"Cinzel,serif",fontSize:34,fontWeight:900,color:lvlUpMsg.color}}>{lvlUpMsg.lv}</div><div style={{fontFamily:"Cinzel,serif",fontSize:14,color:"#e8dfc0",marginTop:6}}>{lvlUpMsg.title}</div></div></div>}
+
+      {/* Achievement popup */}
+      {achPopup&&<div style={{position:"fixed",bottom:80,left:"50%",transform:"translateX(-50%)",zIndex:450,animation:"slideUp 0.4s ease",background:"linear-gradient(135deg,#1a1000,#2a1e00)",border:"2px solid #f0c04077",borderRadius:16,padding:"14px 20px",textAlign:"center",boxShadow:"0 0 40px #f0c04044",pointerEvents:"none",minWidth:220}}>
+        <div style={{fontSize:28,marginBottom:4}}>{achPopup.icon}</div>
+        <div style={{fontFamily:"Cinzel,serif",fontSize:8,letterSpacing:3,color:"#f0c04099",marginBottom:2}}>CONQUISTA DESBLOQUEADA</div>
+        <div style={{fontFamily:"Cinzel,serif",fontSize:14,color:"#f0c040",fontWeight:700}}>{achPopup.name}</div>
+        <div style={{fontSize:11,color:"#aaa",marginTop:2}}>{achPopup.desc}</div>
+        <div style={{fontFamily:"Cinzel,serif",fontSize:11,color:"#f0c040",marginTop:4}}>+{achPopup.xp} XP</div>
+      </div>}
+
+      {/* ── J.A.R.V.I.S FLOATING BUTTON ── */}
+      {!mentorOpen&&<button onClick={openMentor} style={{position:"fixed",bottom:76,right:14,zIndex:200,width:52,height:52,borderRadius:"50%",background:"linear-gradient(135deg,#a78bfa,#7c3aed)",border:"2px solid #a78bfa77",boxShadow:"0 4px 20px #a78bfa55",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,cursor:"pointer",animation:"apulse 3s infinite",fontFamily:"Cinzel,serif",color:"#fff",fontWeight:900,letterSpacing:0}}>
+        J
+      </button>}
+
+      {/* ── J.A.R.V.I.S CHAT PANEL ── */}
+      {mentorOpen&&<div style={{position:"fixed",inset:0,zIndex:250,display:"flex",flexDirection:"column",background:"#07070fee"}}>
+        {/* Header */}
+        <div style={{background:"linear-gradient(135deg,#1a0d2e,#0d0820)",borderBottom:"1px solid #a78bfa33",padding:"14px 16px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+          <div style={{width:40,height:40,borderRadius:"50%",background:"linear-gradient(135deg,#a78bfa,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0,fontFamily:"Cinzel,serif",color:"#fff",fontWeight:900,letterSpacing:1}}>J</div>
+          <div style={{flex:1}}>
+            <div style={{fontFamily:"Cinzel,serif",fontSize:13,color:"#a78bfa",fontWeight:700,letterSpacing:2}}>J.A.R.V.I.S</div>
+            <div style={{fontSize:10,color:"#555"}}>Seu assistente de produtividade pessoal</div>
+          </div>
+          <button onClick={()=>setMentorOpen(false)} style={{background:"none",border:"none",color:"#555",fontSize:22,cursor:"pointer",padding:"4px"}}>✕</button>
+        </div>
+
+        {/* Messages */}
+        <div style={{flex:1,overflowY:"auto",padding:"14px 14px 8px",display:"flex",flexDirection:"column",gap:12}}>
+          {mentorChat.length===0&&mentorLoading&&(
+            <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+              <div style={{width:32,height:32,borderRadius:"50%",background:"linear-gradient(135deg,#a78bfa,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0,fontFamily:"Cinzel,serif",color:"#fff",fontWeight:900}}>J</div>
+              <div style={{background:"#1a1535",border:"1px solid #a78bfa33",borderRadius:"4px 12px 12px 12px",padding:"10px 14px",maxWidth:"85%"}}>
+                <div style={{display:"flex",gap:5,alignItems:"center"}}>
+                  {[0,1,2].map(i=><div key={i} style={{width:7,height:7,borderRadius:"50%",background:"#a78bfa",animation:`blink 1.2s ${i*0.2}s infinite`}}/>)}
+                </div>
+              </div>
+            </div>
+          )}
+          {mentorChat.map((msg,i)=>(
+            <div key={i} style={{display:"flex
